@@ -1,0 +1,115 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>VivoIQ - AI-Powered Procurement</title>
+    
+    <script src="https://unpkg.com/htmx.org@1.9.10"></script>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://cdn.jsdelivr.net/npm/daisyui@4.7.2/dist/full.min.css" rel="stylesheet" type="text/css" />
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    
+    <!-- Flatpickr for Modern Date/Time Picker -->
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css">
+    <script src="https://cdn.jsdelivr.net/npm/flatpickr"></script>
+    
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        vivo: {
+                            navy: '#0f172a',
+                            brand: '#2563eb',
+                            accent: '#38bdf8',
+                            success: '#10b981',
+                            surface: '#f8fafc',
+                        }
+                    },
+                    fontFamily: {
+                        sans: ['Inter', 'sans-serif'],
+                    },
+                    animation: {
+                        'fade-in-up': 'fadeInUp 0.4s ease-out forwards',
+                    },
+                    keyframes: {
+                        fadeInUp: {
+                            '0%': { opacity: '0', transform: 'translateY(10px)' },
+                            '100%': { opacity: '1', transform: 'translateY(0)' },
+                        }
+                    }
+                }
+            },
+            daisyui: {
+                themes: ["light"],
+            },
+        }
+    </script>
+
+    <style>
+        /* Smooth transitions for HTMX content swaps */
+        .htmx-indicator {
+            opacity: 0;
+            transition: opacity 200ms ease-in;
+        }
+        .htmx-request .htmx-indicator {
+            opacity: 1;
+        }
+        .htmx-request.htmx-indicator {
+            opacity: 1;
+        }
+        
+        #main-content {
+            transition: opacity 0.2s ease-out;
+        }
+        #main-content.htmx-swapping {
+            opacity: 0;
+        }
+        
+        .submit-spinner.htmx-request {
+            display: inline-block;
+        }
+    </style>
+</head>
+<body class="bg-vivo-surface text-vivo-navy min-h-screen font-sans flex flex-col selection:bg-vivo-brand selection:text-white">
+    
+    <!-- Navigation Bar -->
+    <header class="fixed top-0 w-full z-50 bg-white/80 backdrop-blur-md border-b border-gray-100 transition-all duration-300">
+        <!-- <div class="navbar container mx-auto px-4 md:px-8 h-16">
+            <div class="flex-1">
+                <a class="text-2xl font-bold tracking-tight text-vivo-navy cursor-pointer flex items-center gap-1" hx-get="/" hx-target="#main-content">
+                    vivo<span class="text-vivo-brand">IQ</span>
+                </a>
+            </div>
+            <div class="flex-none gap-4">
+                <div id="nav-auth-slot" class="flex items-center gap-1 sm:gap-2">
+                    <button class="text-sm font-medium text-gray-500 hover:text-vivo-navy transition-colors px-3 py-2" hx-get="/users/login-form" hx-target="#main-content">Log In</button>
+                    <button class="btn btn-sm h-9 px-4 sm:px-5 rounded-full bg-vivo-brand hover:bg-blue-700 text-white border-none shadow-sm transition-all hover:shadow" hx-get="/users/signup-form" hx-target="#main-content">Get Started</button>
+                </div>
+            </div>
+        </div> -->
+    </header>
+
+    <!-- Main Content Area -->
+    <main class="flex-grow pt-20 pb-4 flex flex-col items-center relative w-full h-[calc(100vh-64px)] overflow-y-auto">
+        <div 
+            id="main-content" 
+            class="w-full min-h-full flex flex-col items-center px-4 py-4"
+        >
+            {{ inner_html | safe }}
+        </div>
+        
+        <!-- Global Loading Indicator -->
+        <div id="page-loader" class="htmx-indicator absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2">
+            <span class="loading loading-spinner loading-md text-vivo-brand"></span>
+        </div>
+    </main>
+
+    <footer class="footer footer-center py-4 text-gray-400 text-[12px] border-t border-gray-100 bg-white/50">
+        <aside>
+            <p>Copyright © 2026 - VivoIQ AI-Powered Procurement</p>
+        </aside>
+    </footer>
+</body>
+</html>
