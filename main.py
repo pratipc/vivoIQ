@@ -638,9 +638,9 @@ async def build_profile(resume_id: int, request: Request, session: AsyncSession 
             
             <div class="w-full max-w-xl bg-white rounded-[16px] shadow-[0_8px_30px_rgb(0,0,0,0.06)] border border-gray-100 overflow-hidden">
                 <!-- Header -->
-                <div class="bg-slate-50 border-b border-gray-100 px-8 py-6 text-center relative overflow-hidden">
-                    <div class="w-14 h-14 bg-white rounded-full flex items-center justify-center mx-auto mb-4 shadow-sm border border-gray-100 relative z-10">
-                        <svg class="w-6 h-6 text-vivo-brand" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <div class="bg-slate-50 border-b border-gray-100 px-6 py-4 text-center relative overflow-hidden">
+                    <div class="w-10 h-10 bg-white rounded-full flex items-center justify-center mx-auto mb-2 shadow-sm border border-gray-100 relative z-10">
+                        <svg class="w-5 h-5 text-vivo-brand" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z"></path>
                         </svg>
                     </div>
@@ -648,33 +648,55 @@ async def build_profile(resume_id: int, request: Request, session: AsyncSession 
                     <p class="text-[13px] text-gray-500 mt-1 relative z-10">Your resume analysis is complete. A unique test has been configured.</p>
                 </div>
                 
-                <!-- Body -->
-                <div class="p-3">
-                    <div class="space-y-6">
-                        <div class="flex items-start gap-4">
-                            <div class="w-10 h-10 rounded-full bg-blue-50 flex items-center justify-center flex-shrink-0 mt-0.5">
-                                <svg class="w-5 h-5 text-vivo-brand" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+                                <!-- Body -->
+                <div class="p-4">
+                    <div class="space-y-2">
+                        <!-- Item 1 -->
+                        <label class="flex items-start gap-2 p-2 border border-gray-100 rounded-lg cursor-pointer hover:bg-gray-50 transition-colors group">
+                            <div class="pt-1">
+                                <input type="checkbox" class="checkbox checkbox-primary chk-req" onchange="checkReadiness()">
+                            </div>
+                            <div class="w-10 h-10 rounded-full bg-blue-50 flex items-center justify-center flex-shrink-0 mt-0.5 text-vivo-brand">
+                                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z" clip-rule="evenodd"></path><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2"></path></svg>
                             </div>
                             <div>
-                                <h4 class="text-[14px] font-bold text-vivo-navy">Time Commitment</h4>
-                                <p class="text-[13px] text-gray-600 mt-1 leading-relaxed">This assessment contains 20 personalized questions and requires approximately <strong>20–30 uninterrupted minutes</strong>. A strict 30-minute timer will begin once the assessment is generated.</p>
+                                <h4 class="text-[14px] font-bold text-vivo-navy">Quiet Environment</h4>
+                                <p class="text-[13px] text-gray-600 mt-0.5 leading-snug">Ensure you are in a distraction-free space to focus entirely on complex scenario reasoning.</p>
                             </div>
-                        </div>
+                        </label>
                         
-                        <div class="flex items-start gap-4">
-                            <div class="w-10 h-10 rounded-full bg-purple-50 flex items-center justify-center flex-shrink-0 mt-0.5">
-                                <svg class="w-5 h-5 text-purple-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"></path></svg>
+                        <!-- Item 2 -->
+                        <label class="flex items-start gap-2 p-2 border border-gray-100 rounded-lg cursor-pointer hover:bg-gray-50 transition-colors group">
+                            <div class="pt-1">
+                                <input type="checkbox" class="checkbox checkbox-primary chk-req" onchange="checkReadiness()">
+                            </div>
+                            <div class="w-10 h-10 rounded-full bg-emerald-50 flex items-center justify-center flex-shrink-0 mt-0.5 text-emerald-600">
+                                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8.111 16.404a5.5 5.5 0 017.778 0M12 20h.01m-7.08-7.071c3.904-3.905 10.236-3.905 14.141 0M1.394 9.393c5.857-5.857 15.355-5.857 21.213 0"></path></svg>
                             </div>
                             <div>
-                                <h4 class="text-[14px] font-bold text-vivo-navy">Assessment Integrity</h4>
-                                <p class="text-[13px] text-gray-600 mt-1 leading-relaxed">Do not close your browser or navigate away. At 30 minutes, unanswered questions will be automatically treated as incomplete and the attempt will be securely closed.</p>
+                                <h4 class="text-[14px] font-bold text-vivo-navy">Stable Connection</h4>
+                                <p class="text-[13px] text-gray-600 mt-0.5 leading-snug">Do not refresh or navigate away during the test. A dropped connection may result in a locked attempt.</p>
                             </div>
-                        </div>
+                        </label>
+                        
+                        <!-- Item 3 -->
+                        <label class="flex items-start gap-2 p-2 border border-gray-100 rounded-lg cursor-pointer hover:bg-gray-50 transition-colors group">
+                            <div class="pt-1">
+                                <input type="checkbox" class="checkbox checkbox-primary chk-req" onchange="checkReadiness()">
+                            </div>
+                            <div class="w-10 h-10 rounded-full bg-purple-50 flex items-center justify-center flex-shrink-0 mt-0.5 text-purple-600">
+                                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+                            </div>
+                            <div>
+                                <h4 class="text-[14px] font-bold text-vivo-navy">30 Minutes Blocked</h4>
+                                <p class="text-[13px] text-gray-600 mt-0.5 leading-snug">Once you generate the assessment, a strict 30-minute timer begins. It cannot be paused.</p>
+                            </div>
+                        </label>
                     </div>
                     
-                    <div class="mt-10 pt-6 border-t border-gray-100 flex flex-col items-center">
+                    <div class="mt-4 pt-4 border-t border-gray-100 flex flex-col items-center">
                         <div id="test-gen-container" class="w-full">
-                            <button hx-get="/assessment/generate-test?resume_id={resume_id}" hx-target="#main-content" onclick="document.getElementById('test-gen-container').classList.add('hidden'); document.getElementById('test-gen-loading').classList.remove('hidden');" class="w-full h-12 bg-vivo-brand hover:bg-blue-700 text-white text-[14px] font-bold rounded-[8px] shadow-md hover:shadow-lg transition-all flex items-center justify-center gap-2">
+                            <button id="btn-generate" disabled hx-get="/assessment/generate-test?resume_id={resume_id}" hx-target="#main-content" onclick="document.getElementById('test-gen-container').classList.add('hidden'); document.getElementById('test-gen-loading').classList.remove('hidden');" class="w-full h-11 bg-vivo-brand hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed text-white text-[14px] font-bold rounded-[8px] shadow-md hover:shadow-lg transition-all flex items-center justify-center gap-2">
                                 <span>I'm Ready — Generate My Assessment</span>
                             </button>
                         </div>
@@ -690,6 +712,13 @@ async def build_profile(resume_id: int, request: Request, session: AsyncSession 
                             </div>
                             
                             <script>
+                                function checkReadiness() {{
+                                    const boxes = document.querySelectorAll('.chk-req');
+                                    const allChecked = Array.from(boxes).every(b => b.checked);
+                                    const btn = document.getElementById('btn-generate');
+                                    btn.disabled = !allChecked;
+                                }}
+                                
                                 (function() {{
                                     document.body.addEventListener('htmx:beforeRequest', function(evt) {{
                                         if (evt.detail.elt.getAttribute('hx-get') && evt.detail.elt.getAttribute('hx-get').includes('generate-test')) {{
@@ -718,9 +747,9 @@ async def build_profile(resume_id: int, request: Request, session: AsyncSession 
                                                 }}
                                             }}, 4000);
                                             
-                                            // Simulate progress up to 99% over 35 seconds
+                                            // Simulate progress up to 99% over 50 seconds
                                             let progress = 0;
-                                            const totalDuration = 35000;
+                                            const totalDuration = 50000;
                                             const intervalTime = 500;
                                             const progressIncrement = (99 / (totalDuration / intervalTime));
                                             
@@ -763,111 +792,123 @@ async def generate_test(resume_id: int, request: Request, session: AsyncSession 
             return HTMLResponse("Unauthorized", status_code=401)
         user_id = int(user_id_cookie)
         
-        # SAFETY CHECK
+        import json
+        from ai_agents import run_question_generation_agent, run_assessment_integrity_agent
+        
+        # SAFETY CHECK & PHASE DETECTION
         check_result = await session.execute(text("CALL CheckAIAssessment(:r_id)"), {"r_id": resume_id})
         check_row = check_result.mappings().first()
-        if check_row and check_row["raw_json"]:
+        
+        saved_json = None
+        if check_row and check_row.get("raw_json"):
+            try:
+                saved_json = json.loads(check_row["raw_json"])
+            except:
+                pass
+                
+        if saved_json and saved_json.get("status") != "pending_ai5":
             from fastapi.responses import Response
             res = Response()
             res.headers["HX-Redirect"] = f"/assessment/test-questions?resume_id={resume_id}"
             return res
-        
-        import json
-        from ai_agents import run_question_generation_agent, run_assessment_integrity_agent
-        
-        # Fetch Profile & Blueprint
-        prof_res = await session.execute(text("CALL GetCandidateProfile(:r_id)"), {"r_id": resume_id})
-        prof_row = prof_res.mappings().first()
-        profile_json = json.loads(prof_row["profile_json"]) if prof_row and prof_row["profile_json"] else {}
-        
-        bp_res = await session.execute(text("CALL GetAssessmentBlueprint(:r_id)"), {"r_id": resume_id})
-        bp_row = bp_res.mappings().first()
-        blueprint_json = json.loads(bp_row["blueprint_json"]) if bp_row and bp_row["blueprint_json"] else {}
-        
-        # Run AI-4 (Generator)
-        ai4_json = run_question_generation_agent(blueprint_json, profile_json)
-        
-        # Run AI-5 (Integrity Reviewer)
-        ai5_json = run_assessment_integrity_agent(ai4_json, blueprint_json)
-        
-        # Map AI-5's clean 20 questions into the new 4-dimension scoring model
-        ui_json = {
-            "sections": [
-                {
-                    "section_name": "Knowledge Accuracy",
-                    "weightage": 35,
-                    "total_score": 25,
-                    "questions": []
-                },
-                {
-                    "section_name": "Practical Application",
-                    "weightage": 30,
-                    "total_score": 25,
-                    "questions": []
-                },
-                {
-                    "section_name": "Commercial & Analytical Reasoning",
-                    "weightage": 20,
-                    "total_score": 25,
-                    "questions": []
-                },
-                {
-                    "section_name": "Judgment & Risk Awareness",
-                    "weightage": 15,
-                    "total_score": 25,
-                    "questions": []
-                }
-            ]
-        }
-        
-        final_questions = ai5_json.get("final_questions", [])
-        
-        if len(final_questions) == 0:
-            return HTMLResponse(f"""
-            <div class="w-[520px] mx-auto bg-white rounded-[12px] shadow-sm border border-red-200 p-8 text-center mt-12">
-                <div class="w-12 h-12 rounded-full bg-red-100 flex items-center justify-center mx-auto mb-4 text-red-500">
-                    <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"></path></svg>
-                </div>
-                <h2 class="text-xl font-bold text-red-600 mb-2">Generation Interrupted</h2>
-                <p class="text-[13px] text-gray-600 mb-6 leading-relaxed">Our AI engine was unable to generate the assessment at this time. This occasionally happens due to rate limits or strict safety filters rejecting the generated text.</p>
-                <div hx-get="/assessment/build-profile?resume_id={resume_id}" hx-target="#main-content" class="h-10 px-6 bg-red-50 text-red-700 font-semibold rounded-[8px] cursor-pointer inline-flex items-center justify-center hover:bg-red-100 transition-colors">
-                    Try Again
-                </div>
-            </div>
-            """, status_code=200)
             
-        for i, q in enumerate(final_questions):
-            q_ui = {
-                "question": q.get("question", "Fallback question text"),
-                "question_type": q.get("question_type", "mcq"),
-                "options": q.get("options", []),
-                "answer": q.get("answer", ""),
-                "rubric": q.get("rubric", ""),
-                "score": q.get("max_score", 5)
+        if saved_json and saved_json.get("status") == "pending_ai5":
+            # ==========================================
+            # PHASE 2: Integrity Review (AI-5)
+            # ==========================================
+            ai4_json = saved_json.get("ai4_json", {})
+            bp_res = await session.execute(text("CALL GetAssessmentBlueprint(:r_id)"), {"r_id": resume_id})
+            bp_row = bp_res.mappings().first()
+            blueprint_json = json.loads(bp_row["blueprint_json"]) if bp_row and bp_row["blueprint_json"] else {}
+            
+            ai5_json = run_assessment_integrity_agent(ai4_json, blueprint_json)
+            
+            ui_json = {
+                "sections": [
+                    {"section_name": "Knowledge Accuracy", "weightage": 35, "total_score": 25, "questions": []},
+                    {"section_name": "Practical Application", "weightage": 30, "total_score": 25, "questions": []},
+                    {"section_name": "Commercial & Analytical Reasoning", "weightage": 20, "total_score": 25, "questions": []},
+                    {"section_name": "Judgment & Risk Awareness", "weightage": 15, "total_score": 25, "questions": []}
+                ]
             }
-            if i < 5: ui_json["sections"][0]["questions"].append(q_ui)
-            elif i < 10: ui_json["sections"][1]["questions"].append(q_ui)
-            elif i < 15: ui_json["sections"][2]["questions"].append(q_ui)
-            else: ui_json["sections"][3]["questions"].append(q_ui)
+            
+            final_questions = ai5_json.get("final_questions", [])
+            if len(final_questions) == 0:
+                # If AI-5 completely fails or hits a rate limit, fallback to AI-4's output
+                final_questions = ai4_json.get("questions", [])
                 
-        raw_json = json.dumps(ui_json)
-        
-        await session.execute(
-            text("CALL SaveAIAssessment(:u_id, :r_id, :test_json)"),
-            {"u_id": user_id, "r_id": resume_id, "test_json": raw_json}
-        )
-        await session.commit()
-        
-        from fastapi.responses import Response
-        res = Response()
-        res.headers["HX-Redirect"] = f"/assessment/test-questions?resume_id={resume_id}"
-        return res
-        
+            if len(final_questions) == 0:
+                return HTMLResponse("<div class='p-8 text-center text-red-600'>Generation Failed. Please try again.</div>", status_code=200)
+                
+            for i, q in enumerate(final_questions):
+                q_ui = {
+                    "question": q.get("question", "Fallback question text"),
+                    "question_type": q.get("question_type", "mcq"),
+                    "domain": q.get("domain", "General Procurement"),
+                    "options": q.get("options", []),
+                    "answer": q.get("answer", ""),
+                    "rubric": q.get("rubric", ""),
+                    "score": q.get("max_score", 5)
+                }
+                if i < 5: ui_json["sections"][0]["questions"].append(q_ui)
+                elif i < 10: ui_json["sections"][1]["questions"].append(q_ui)
+                elif i < 15: ui_json["sections"][2]["questions"].append(q_ui)
+                else: ui_json["sections"][3]["questions"].append(q_ui)
+                    
+            raw_json = json.dumps(ui_json)
+            await session.execute(
+                text("CALL SaveAIAssessment(:u_id, :r_id, :test_json)"),
+                {"u_id": user_id, "r_id": resume_id, "test_json": raw_json}
+            )
+            await session.commit()
+            
+            from fastapi.responses import Response
+            res = Response()
+            res.headers["HX-Redirect"] = f"/assessment/test-questions?resume_id={resume_id}"
+            return res
+            
+        else:
+            # ==========================================
+            # PHASE 1: Question Generation (AI-4)
+            # ==========================================
+            prof_res = await session.execute(text("CALL GetCandidateProfile(:r_id)"), {"r_id": resume_id})
+            prof_row = prof_res.mappings().first()
+            profile_json = json.loads(prof_row["profile_json"]) if prof_row and prof_row["profile_json"] else {}
+            
+            bp_res = await session.execute(text("CALL GetAssessmentBlueprint(:r_id)"), {"r_id": resume_id})
+            bp_row = bp_res.mappings().first()
+            blueprint_json = json.loads(bp_row["blueprint_json"]) if bp_row and bp_row["blueprint_json"] else {}
+            
+            ai4_json = run_question_generation_agent(blueprint_json, profile_json)
+            
+            # Save intermediate state
+            intermediate_state = {"status": "pending_ai5", "ai4_json": ai4_json}
+            await session.execute(
+                text("CALL SaveAIAssessment(:u_id, :r_id, :test_json)"),
+                {"u_id": user_id, "r_id": resume_id, "test_json": json.dumps(intermediate_state)}
+            )
+            await session.commit()
+            
+            # Return HTMX Response that immediately triggers Phase 2 without changing the visual loading container!
+            # The hx-target="this" and hx-swap="outerHTML" ensures we just swap the loading guts, keeping the animation alive.
+            return HTMLResponse(f'''
+            <div id="test-gen-loading" class="w-full flex flex-col items-center">
+                <div class="flex justify-between items-center w-full mb-2">
+                    <span class="text-[12px] font-medium text-vivo-brand">Phase 1 Complete! Initializing Integrity Reviewer (AI-5)...</span>
+                    <span class="text-[12px] font-bold text-vivo-brand">50%</span>
+                </div>
+                <div class="w-full h-2 bg-blue-50 rounded-full overflow-hidden">
+                    <div class="h-full bg-vivo-brand rounded-full transition-all duration-1000 ease-out" style="width: 50%"></div>
+                </div>
+                <!-- Phase 2 Trigger -->
+                <div hx-get="/assessment/generate-test?resume_id={resume_id}" hx-trigger="load" hx-target="#main-content" class="hidden"></div>
+            </div>
+            ''', status_code=200)
+
     except Exception as e:
         import traceback
         error_msg = traceback.format_exc()
         return HTMLResponse(f"<div class='alert alert-error'><pre>{error_msg}</pre></div>", status_code=500)
-
 
 @app.get("/assessment/test-questions", response_class=HTMLResponse)
 async def test_questions(request: Request, resume_id: int, q_idx: int = 0, session: AsyncSession = Depends(get_session)):
@@ -1267,49 +1308,91 @@ async def process_results(resume_id: int, request: Request, session: AsyncSessio
                 
         await session.commit()
         
-    # 5. Deterministic Score Calculation
+    # 5. AI-7: Deterministic Capability Scoring Engine
+    
+    # We will score by domain
+    domain_scores = {}
     final_score = 0.0
     breakdown = []
+    total_max_score = 0.0
     
-    # Reset global_idx for recalculation
     g_idx = 0
     for sec in sections:
-        sec_weight = float(sec.get("weightage", 25))
-        sec_total = float(sec.get("total_score", 25))
-        sec_score = 0.0
-        
         for q in sec.get("questions", []):
             r = raw_responses.get(g_idx)
+            domain = q.get("domain", "General Procurement")
+            max_pts = float(q.get("score", 5)) # In main.py, it's saved as "score" in UI JSON
+            
+            if domain not in domain_scores:
+                domain_scores[domain] = {"earned": 0.0, "possible": 0.0}
+            
+            domain_scores[domain]["possible"] += max_pts
+            total_max_score += max_pts
+            
             if r:
-                sec_score += float(r["points_awarded"])
+                pts = float(r.get("points_awarded", 0))
+                domain_scores[domain]["earned"] += pts
+                final_score += pts
+                
                 breakdown.append({
                     "question_idx": g_idx,
+                    "domain": domain,
                     "question": q.get("question"),
                     "user_answer": r.get("user_answer"),
-                    "correct_answer": q.get("answer"),
                     "is_correct": r.get("is_correct"),
-                    "points_awarded": float(r["points_awarded"]),
+                    "points_awarded": pts,
+                    "max_points": max_pts,
                     "ai_reasoning": r.get("ai_reasoning", "")
                 })
             else:
                 breakdown.append({
                     "question_idx": g_idx,
+                    "domain": domain,
                     "question": q.get("question"),
                     "user_answer": None,
-                    "correct_answer": q.get("answer"),
                     "is_correct": False,
                     "points_awarded": 0.0,
+                    "max_points": max_pts,
                     "ai_reasoning": ""
                 })
             g_idx += 1
             
-        weighted_sec = (sec_score / max(sec_total, 1.0)) * sec_weight
-        final_score += weighted_sec
+    # Calculate percentage
+    if total_max_score > 0:
+        overall_percentage = (final_score / total_max_score) * 100.0
+    else:
+        overall_percentage = 0.0
+        
+    for dom, scores in domain_scores.items():
+        if scores["possible"] > 0:
+            scores["percentage"] = (scores["earned"] / scores["possible"]) * 100.0
+        else:
+            scores["percentage"] = 0.0
+            
+    # AI-7 Pass/Fail Rules
+    passed = True
+    critical_failure = False
+    
+    if overall_percentage < 70.0:
+        passed = False
+        
+    for dom, scores in domain_scores.items():
+        if scores["percentage"] < 50.0:
+            passed = False
+            critical_failure = True
+            
+    ai7_results = {
+        "overall_percentage": overall_percentage,
+        "domain_scores": domain_scores,
+        "passed": passed,
+        "critical_failure": critical_failure,
+        "breakdown": breakdown
+    }
         
     # Save Final Result
     await session.execute(
         text("CALL SaveAssessmentResult(:u, :r, :tot, :bkd)"),
-        {"u": user_id, "r": resume_id, "tot": final_score, "bkd": json.dumps(breakdown)}
+        {"u": user_id, "r": resume_id, "tot": overall_percentage, "bkd": json.dumps(ai7_results)}
     )
     await session.execute(
         text("CALL UpdateUserStage(:u_id, :stage)"),
@@ -1329,54 +1412,87 @@ async def view_results(request: Request, resume_id: int, session: AsyncSession =
     if not user_id_cookie: return HTMLResponse("Unauthorized", status_code=401)
     user_id = int(user_id_cookie)
     
+    # 1. Get Assessment Result
     result = await session.execute(text("CALL GetLatestAssessmentResult(:r_id)"), {"r_id": resume_id})
     score_row = result.mappings().first()
-    
     if not score_row: return HTMLResponse("Results not found", status_code=404)
     
     score = score_row["total_score"]
-    
-    # Evaluate Pass/Fail Rule-governed logic
-    passed = True
-    status_msg = "Passed"
-    if score < 70.0:
-        passed = False
-        status_msg = "Development Required (Score < 70%)"
+    try:
+        ai7_results = json.loads(score_row["breakdown_json"])
+        if isinstance(ai7_results, list): ai7_results = {"overall_percentage": score, "domain_scores": {}, "passed": (score >= 70.0), "critical_failure": False}
+    except:
+        ai7_results = {"overall_percentage": score, "domain_scores": {}, "passed": (score >= 70.0), "critical_failure": False}
         
-    # Later we will add the "No critical competency below 50%" rule, for now basic threshold
+    passed = ai7_results.get("passed", score >= 70.0)
+    critical = ai7_results.get("critical_failure", False)
+    domain_scores = ai7_results.get("domain_scores", {})
     
-    html_content = f"""
-    <div class="absolute top-6 right-8 z-50 animate-fade-in">
-        <a href="/users/logout" class="text-[13px] font-semibold text-gray-400 hover:text-vivo-brand transition-colors flex items-center gap-1.5 cursor-pointer">
-            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1"></path></svg> 
-            Log out
-        </a>
-    </div>
-    <div class="w-full max-w-4xl mx-auto py-12 animate-fade-in-up">
-        <div class="bg-white rounded-[16px] shadow-sm border border-gray-100 p-10 text-center">
-            <div class="w-24 h-24 mx-auto rounded-full flex items-center justify-center mb-6 {'bg-emerald-50 text-emerald-500' if passed else 'bg-amber-50 text-amber-500'}">
-                {f'<svg class="w-12 h-12" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M5 13l4 4L19 7"></path></svg>' if passed else f'<svg class="w-12 h-12" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"></path></svg>'}
+    # 2. Get Expected Level & Profile
+    prof_res = await session.execute(text("SELECT expected_level, profile_json FROM candidate_profiles WHERE resume_id = :r_id ORDER BY id DESC LIMIT 1"), {"r_id": resume_id})
+    prof_row = prof_res.mappings().first()
+    expected_level = 1
+    level_name = "Foundation"
+    if prof_row:
+        expected_level = prof_row.get("expected_level", 1)
+        
+    levels_map = {1: "Level 1 — Foundation", 2: "Level 2 — Practitioner", 3: "Level 3 — Advanced", 4: "Level 4 — Expert", 5: "Level 5 — Leader"}
+    level_text = levels_map.get(expected_level, f"Level {expected_level}")
+    
+    # 3. Calculate Strengths and Gaps
+    sorted_domains = sorted(domain_scores.items(), key=lambda item: item[1].get("percentage", 0), reverse=True)
+    top_3_strengths = [dom for dom, data in sorted_domains if data.get("percentage", 0) >= 50][:3]
+    bottom_3_gaps = [dom for dom, data in reversed(sorted_domains) if data.get("percentage", 0) < 70][:3]
+    
+    strengths_html = ""
+    if top_3_strengths:
+        for s in top_3_strengths:
+            strengths_html += f'<li class="flex items-center gap-2 text-[13px] text-gray-700 mb-1"><svg class="w-4 h-4 text-emerald-500 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg>{s}</li>'
+    else:
+        strengths_html = '<li class="text-[13px] text-gray-400 italic">No strong domains identified</li>'
+        
+    gaps_html = ""
+    if bottom_3_gaps:
+        for g in bottom_3_gaps:
+            gaps_html += f'<li class="flex items-center gap-2 text-[13px] text-gray-700 mb-1"><svg class="w-4 h-4 text-amber-500 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"></path></svg>{g}</li>'
+    else:
+        gaps_html = '<li class="text-[13px] text-gray-400 italic">No critical gaps identified</li>'
+    
+    if passed:
+        if score >= 90.0:
+            status_msg = "Distinguished Performance"
+            cert_color = "text-purple-500"
+            cert_bg = "bg-purple-50 border-purple-200"
+        else:
+            status_msg = "Capability Verified"
+            cert_color = "text-emerald-500"
+            cert_bg = "bg-emerald-50 border-emerald-200"
+    else:
+        if critical:
+            status_msg = "Critical Gap Identified"
+        else:
+            status_msg = "Development Required"
+        cert_color = "text-amber-500"
+        cert_bg = "bg-amber-50 border-amber-200"
+        
+    # Build Domain Radar HTML
+    domains_html = ""
+    for dom, data in domain_scores.items():
+        pct = data.get("percentage", 0)
+        dom_color = "bg-emerald-500" if pct >= 70 else ("bg-amber-400" if pct >= 50 else "bg-red-500")
+        domains_html += f'''
+        <div class="mb-4">
+            <div class="flex justify-between items-center mb-1">
+                <span class="text-[13px] font-bold text-vivo-navy">{dom}</span>
+                <span class="text-[12px] font-bold text-gray-500">{pct:.1f}%</span>
             </div>
-            
-            <h1 class="text-3xl font-bold text-vivo-navy tracking-tight mb-2">{"Capability Verified" if passed else "Capability Gap Identified"}</h1>
-            <p class="text-gray-500 mb-8">{status_msg}</p>
-            
-            <div class="inline-flex flex-col items-center justify-center border-[4px] {'border-emerald-500' if passed else 'border-amber-400'} rounded-full w-40 h-40 mb-8 shadow-sm">
-                <span class="text-4xl font-bold text-vivo-navy">{score:.1f}%</span>
-                <span class="text-[12px] font-semibold text-gray-400 uppercase tracking-wider mt-1">Final Score</span>
-            </div>
-            
-            <div class="text-left mt-8 p-6 bg-gray-50 rounded-[12px] border border-gray-100">
-                <h3 class="text-lg font-bold text-vivo-navy mb-4">Assessment Breakdown (AI Evaluated)</h3>
-                <p class="text-sm text-gray-600 mb-4">Sprint 4 Deterministic Engine processed the score. Full Domain-by-Domain capability radar coming in Sprint 5!</p>
+            <div class="w-full h-2 bg-gray-100 rounded-full overflow-hidden">
+                <div class="h-full {dom_color} rounded-full" style="width: {pct}%"></div>
             </div>
         </div>
-    </div>
-    """
-    return HTMLResponse(content=html_content)
-
-    # We will build out a more beautiful results page next, this is just to show it worked    # We will build out a more beautiful results page next, this is just to show it worked
-    html_content = f"""
+        '''
+    
+    html_content = f'''
     <div class="absolute top-6 right-8 z-50 animate-fade-in">
         <a href="/users/logout" class="text-[13px] font-semibold text-gray-400 hover:text-vivo-brand transition-colors flex items-center gap-1.5 cursor-pointer">
             <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1"></path></svg> 
@@ -1384,8 +1500,9 @@ async def view_results(request: Request, resume_id: int, session: AsyncSession =
         </a>
     </div>
     
-    <div class="w-full max-w-3xl mx-auto pb-8 animate-fade-in-up">
-        <div class="flex items-center justify-center mb-10 h-16 w-full px-12 max-w-lg mx-auto">
+    <div class="w-full max-w-5xl mx-auto py-10 animate-fade-in-up">
+        
+        <div class="flex items-center justify-center mb-8 h-12 w-full px-12 max-w-lg mx-auto">
             <div class="flex flex-col items-center relative z-10 w-8">
                 <div class="w-6 h-6 rounded-full bg-blue-500 text-white flex items-center justify-center text-[10px] shadow-sm"><svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M5 13l4 4L19 7"></path></svg></div>
                 <span class="text-[11px] font-medium text-gray-500 mt-2 absolute top-6 whitespace-nowrap">Account</span>
@@ -1398,7 +1515,7 @@ async def view_results(request: Request, resume_id: int, session: AsyncSession =
             <div class="flex-grow h-[2px] bg-blue-500 mx-2"></div>
             <div class="flex flex-col items-center relative z-10 w-8">
                 <div class="w-6 h-6 rounded-full bg-blue-500 text-white flex items-center justify-center text-[10px] shadow-sm"><svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M5 13l4 4L19 7"></path></svg></div>
-                <span class="text-[11px] font-medium text-gray-500 mt-2 absolute top-6 whitespace-nowrap">Test</span>
+                <span class="text-[11px] font-medium text-gray-500 mt-2 absolute top-6 whitespace-nowrap">Assessment</span>
             </div>
             <div class="flex-grow h-[2px] bg-blue-500 mx-2"></div>
             <div class="flex flex-col items-center relative z-10 w-8">
@@ -1406,21 +1523,292 @@ async def view_results(request: Request, resume_id: int, session: AsyncSession =
                 <span class="text-[11px] font-semibold text-vivo-navy mt-2 absolute top-6 whitespace-nowrap">Results</span>
             </div>
         </div>
-
-        <div class="bg-white rounded-[12px] shadow-sm border border-gray-200 p-12 text-center">
-            <h2 class="text-3xl font-bold text-vivo-navy tracking-tight mb-2">Assessment Complete!</h2>
-            <p class="text-[14px] text-gray-500 mb-8">You have successfully completed the AI procurement evaluation.</p>
+        
+        <div class="text-center mb-8">
+            <h1 class="text-3xl font-bold text-vivo-navy tracking-tight mb-2">VivoIQ Capability Report</h1>
+            <p class="text-[15px] font-medium text-gray-500">Attempted Target: <span class="text-vivo-brand font-bold">{level_text}</span></p>
+        </div>
+        
+        <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
             
-            <div class="w-32 h-32 mx-auto bg-blue-50 rounded-full flex flex-col items-center justify-center border-[4px] border-blue-100 mb-6">
-                <span class="text-3xl font-black text-vivo-brand">{score}%</span>
+            <!-- Left Column: Final Score & Status -->
+            <div class="lg:col-span-1 flex flex-col gap-6">
+                <!-- Status Card -->
+                <div class="bg-white rounded-[16px] shadow-sm border {cert_bg} p-8 text-center flex flex-col items-center justify-center">
+                    <div class="w-16 h-16 rounded-full bg-white border border-gray-100 flex items-center justify-center mb-4 {cert_color} shadow-sm">
+                        {f'<svg class="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M5 13l4 4L19 7"></path></svg>' if passed else f'<svg class="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"></path></svg>'}
+                    </div>
+                    
+                    <h2 class="text-[22px] font-bold text-vivo-navy tracking-tight mb-1">{"Capability Verified" if passed else "Capability Gap Identified"}</h2>
+                    <p class="text-[13px] font-bold {cert_color} mb-6">{status_msg}</p>
+                    
+                    <div class="inline-flex flex-col items-center justify-center border-[4px] {cert_color.replace('text', 'border')} rounded-full w-36 h-36 shadow-sm bg-white">
+                        <span class="text-4xl font-bold text-vivo-navy">{score:.1f}%</span>
+                        <span class="text-[10px] font-bold text-gray-400 uppercase tracking-wider mt-1">Overall Score</span>
+                    </div>
+                </div>
+                
+                <!-- Action CTA -->
+                <div class="bg-white rounded-[16px] shadow-sm border border-gray-200 p-6">
+                    <h3 class="text-[14px] font-bold text-vivo-navy mb-4">Next Steps</h3>
+                    <p class="text-[13px] text-gray-500 mb-6">{"Your capability profile has been updated. You are eligible to proceed to the next tier." if passed else "Based on your verified gaps, an AI-tailored learning pathway is highly recommended before reassessment."}</p>
+                    
+                    {f"""<button class="w-full px-5 py-3 bg-vivo-brand hover:bg-blue-600 text-white font-bold text-[13px] rounded-[10px] transition-colors shadow-sm focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-vivo-brand">Attempt Next Level</button>""" if passed else f"""<label for="learning-drawer" hx-get="/assessment/learning-recommendations?resume_id={resume_id}" hx-target="#drawer-content" class="w-full px-5 py-3 bg-slate-800 hover:bg-slate-700 text-white font-bold text-[13px] rounded-[10px] transition-colors shadow-sm cursor-pointer block text-center">Build My Capability</label>"""}
+
+                </div>
             </div>
             
-            <p class="text-[13px] font-medium text-gray-600">Your results have been saved to your profile.</p>
+            <!-- Right Column: Radar & Breakdown -->
+            <div class="lg:col-span-2 flex flex-col gap-6">
+                <!-- Top 3 Strengths / Priorities -->
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div class="bg-white rounded-[16px] shadow-sm border border-emerald-100 p-6">
+                        <h3 class="text-[14px] font-bold text-emerald-700 mb-3">Top Demonstrated Strengths</h3>
+                        <ul class="space-y-1">
+                            {strengths_html}
+                        </ul>
+                    </div>
+                    <div class="bg-white rounded-[16px] shadow-sm border border-amber-100 p-6">
+                        <h3 class="text-[14px] font-bold text-amber-700 mb-3">Development Priorities</h3>
+                        <ul class="space-y-1">
+                            {gaps_html}
+                        </ul>
+                    </div>
+                </div>
+                
+                <!-- Domain Radar -->
+                <div class="bg-white rounded-[16px] shadow-sm border border-gray-100 p-8 flex-grow">
+                    <h3 class="text-lg font-bold text-vivo-navy mb-1">Domain-by-Domain Capability</h3>
+                    <p class="text-[13px] text-gray-500 mb-8">Performance against {level_text} expectations. (Pass criteria: 70% overall, no critical domain below 50%)</p>
+                    
+                    <div class="space-y-3">
+                        {domains_html}
+                    </div>
+                </div>
+            
+            </div>
+            </div>
+            
         </div>
+        
     </div>
-    """
+    
+    <!-- Drawer Root (Slide-Over Panel) -->
+    <div class="drawer drawer-end absolute inset-0 z-[100] pointer-events-none">
+      <input id="learning-drawer" type="checkbox" class="drawer-toggle" />
+      <div class="drawer-side pointer-events-auto">
+        <label for="learning-drawer" aria-label="close sidebar" class="drawer-overlay bg-vivo-navy/40 backdrop-blur-sm transition-all duration-300"></label>
+        <div class="menu bg-white text-base-content min-h-full w-[100vw] sm:w-[500px] p-0 shadow-2xl flex flex-col transition-transform duration-300">
+          
+          <!-- Drawer Header -->
+          <div class="p-8 border-b border-gray-100 flex items-center justify-between bg-white/90 backdrop-blur-md sticky top-0 z-20">
+              <div class="flex items-center gap-4">
+                  <div class="w-12 h-12 rounded-2xl bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center text-white shadow-lg shadow-indigo-200">
+                      <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19.428 15.428a2 2 0 00-1.022-.547l-2.387-.477a6 6 0 00-3.86.517l-.318.158a6 6 0 01-3.86.517L6.05 15.21a2 2 0 00-1.806.547M8 4h8l-1 1v5.172a2 2 0 00.586 1.414l5 5c1.26 1.26.367 3.414-1.415 3.414H4.828c-1.782 0-2.674-2.154-1.414-3.414l5-5A2 2 0 009 10.172V5L8 4z"></path></svg>
+                  </div>
+                  <div>
+                      <h3 class="text-xl font-extrabold text-vivo-navy tracking-tight">AI Capability Pathway</h3>
+                      <p class="text-[13px] text-gray-500 font-medium">Your personalized recovery plan</p>
+                  </div>
+              </div>
+              <label for="learning-drawer" class="w-8 h-8 rounded-full bg-gray-50 hover:bg-gray-100 flex items-center justify-center text-gray-500 cursor-pointer transition-colors">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M6 18L18 6M6 6l12 12"></path></svg>
+              </label>
+          </div>
+          
+          <!-- Drawer Content Area (Targeted by HTMX) -->
+          <div id="drawer-content" class="p-8 overflow-y-auto flex-grow bg-slate-50 relative">
+              <!-- Animated Skeleton Loader (Replaced by HTMX) -->
+              <div class="animate-pulse flex flex-col gap-8 relative z-10 pl-2">
+                  <div class="absolute top-2 left-3 bottom-0 w-0.5 bg-gray-200"></div>
+                  
+                  <div class="relative pl-8">
+                      <div class="absolute top-1.5 -left-1.5 w-6 h-6 rounded-full bg-gray-200 border-2 border-white shadow-sm z-10"></div>
+                      <div class="bg-white rounded-[20px] p-6 border border-gray-100 shadow-sm">
+                          <div class="w-24 h-3 bg-gray-200 rounded-full mb-4"></div>
+                          <div class="w-48 h-5 bg-gray-300 rounded mb-8"></div>
+                          <div class="w-full h-16 bg-gray-100 rounded-xl mb-4"></div>
+                          <div class="flex justify-between mt-6">
+                              <div class="w-24 h-4 bg-gray-100 rounded"></div>
+                              <div class="w-24 h-4 bg-gray-100 rounded"></div>
+                          </div>
+                      </div>
+                  </div>
+                  
+                  <div class="relative pl-8">
+                      <div class="absolute top-1.5 -left-1.5 w-6 h-6 rounded-full bg-gray-200 border-2 border-white shadow-sm z-10"></div>
+                      <div class="bg-white rounded-[20px] p-6 border border-gray-100 shadow-sm">
+                          <div class="w-20 h-3 bg-gray-200 rounded-full mb-4"></div>
+                          <div class="w-40 h-5 bg-gray-300 rounded mb-8"></div>
+                          <div class="w-full h-16 bg-gray-100 rounded-xl mb-4"></div>
+                      </div>
+                  </div>
+              </div>
+          </div>
+          
+          <!-- Drawer Footer -->
+          <div class="p-6 border-t border-gray-100 bg-white">
+              <button class="w-full py-3.5 bg-vivo-brand hover:bg-blue-600 text-white font-bold text-[14px] rounded-xl shadow-sm shadow-blue-200 transition-colors flex items-center justify-center gap-2">
+                  <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path></svg>
+                  Export Learning Plan to PDF
+              </button>
+          </div>
+          
+        </div>
+      </div>
+    </div>
+    '''
+    is_htmx = request.headers.get("hx-request") == "true"
+    if not is_htmx:
+        html_content = f"""<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>VivoIQ - Capability Report</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/htmx.org@1.9.10"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <link href="https://cdn.jsdelivr.net/npm/daisyui@4.7.2/dist/full.min.css" rel="stylesheet" type="text/css" />
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap');
+        body {{ font-family: 'Plus Jakarta Sans', sans-serif; }}
+        .text-vivo-navy {{ color: #0F172A; }}
+        .bg-vivo-navy {{ background-color: #0F172A; }}
+        .text-vivo-brand {{ color: #2563EB; }}
+        .bg-vivo-brand {{ background-color: #2563EB; }}
+        .animate-fade-in-up {{ animation: fadeInUp 0.5s ease-out forwards; opacity: 0; transform: translateY(10px); }}
+        @keyframes fadeInUp {{ to {{ opacity: 1; transform: translateY(0); }} }}
+    </style>
+</head>
+<body class="bg-slate-50 min-h-screen text-slate-800 antialiased">
+    <div id="main-content">
+        {html_content}
+    </div>
+</body>
+</html>"""
+
     return HTMLResponse(content=html_content)
+
+
+
+@app.get("/assessment/learning-recommendations", response_class=HTMLResponse)
+async def generate_learning_recommendations(resume_id: int, request: Request, session: AsyncSession = Depends(get_session)):
+    user_id_cookie = request.cookies.get("user_id")
+    if not user_id_cookie: return HTMLResponse("Unauthorized", status_code=401)
+    
+    # 1. Get Assessment Result
+    result = await session.execute(text("CALL GetLatestAssessmentResult(:r_id)"), {"r_id": resume_id})
+    score_row = result.mappings().first()
+    if not score_row: return HTMLResponse("Results not found", status_code=404)
+    
+    try:
+        ai7_results = json.loads(score_row["breakdown_json"])
+    except:
+        return HTMLResponse("Invalid results format", status_code=500)
+        
+    # 2. Get Expected Level
+    prof_res = await session.execute(text("SELECT expected_level FROM candidate_profiles WHERE resume_id = :r_id ORDER BY id DESC LIMIT 1"), {"r_id": resume_id})
+    prof_row = prof_res.mappings().first()
+    expected_level = prof_row.get("expected_level", 1) if prof_row else 1
+    
+    # 3. Call AI-8
+    from ai_agents import run_learning_recommendation_agent
+    recommendations = run_learning_recommendation_agent(ai7_results, expected_level)
+    
+    pathway = recommendations.get("learning_pathway", [])
+    
+    if not pathway:
+        return HTMLResponse("<div class='p-6 bg-red-50 text-red-600 rounded-[16px] shadow-sm'>Failed to generate learning pathway. Please try again.</div>")
+        
+    cards_html = ""
+    for i, rec in enumerate(pathway):
+        priority = str(rec.get("priority", "")).lower()
+        if priority == "high":
+            icon_color = "text-rose-500"
+            bg_color = "bg-rose-50"
+            border_color = "border-rose-100"
+            icon = '<svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"></path></svg>'
+        elif priority == "medium":
+            icon_color = "text-amber-500"
+            bg_color = "bg-amber-50"
+            border_color = "border-amber-100"
+            icon = '<svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"></path></svg>'
+        else:
+            icon_color = "text-emerald-500"
+            bg_color = "bg-emerald-50"
+            border_color = "border-emerald-100"
+            icon = '<svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>'
+            
+        is_mandatory = str(rec.get("type", "")).lower() == "mandatory"
+        badge_html = f'<span class="px-2.5 py-1 bg-slate-800 text-white rounded-full text-[10px] font-bold uppercase tracking-wider shadow-sm">{"Mandatory" if is_mandatory else "Optional"}</span>'
+        
+        cards_html += f'''
+        <div class="relative pl-8 pb-8 group">
+            <!-- Timeline Line -->
+            <div class="absolute top-8 left-[11px] bottom-0 w-0.5 bg-gray-100 group-last:bg-transparent"></div>
+            
+            <!-- Timeline Dot -->
+            <div class="absolute top-1.5 left-0 w-6 h-6 rounded-full {bg_color} flex items-center justify-center border-2 border-white shadow-sm z-10 {icon_color}">
+                {icon}
+            </div>
+            
+            <!-- Card -->
+            <div class="bg-white rounded-[20px] p-6 shadow-[0_2px_12px_-4px_rgba(0,0,0,0.06)] border border-gray-100 transition-all hover:shadow-[0_8px_24px_-8px_rgba(0,0,0,0.12)] hover:border-gray-200">
+                
+                <div class="flex flex-wrap items-start justify-between gap-4 mb-5">
+                    <div>
+                        <span class="text-[12px] font-bold uppercase tracking-wider {icon_color} mb-1 block">{rec.get("domain")}</span>
+                        <h4 class="text-[18px] font-extrabold text-vivo-navy leading-tight">{rec.get("recommended_asset", "Targeted Training")}</h4>
+                    </div>
+                    <div>{badge_html}</div>
+                </div>
+                
+                <div class="bg-gray-50/50 rounded-[12px] p-4 mb-5 border border-gray-100/50">
+                    <div class="mb-3">
+                        <span class="text-[11px] font-bold text-gray-400 uppercase tracking-wider mb-1 block">Identified Gap</span>
+                        <p class="text-[13px] text-gray-700 leading-relaxed font-medium">{rec.get("gap")}</p>
+                    </div>
+                    <div>
+                        <span class="text-[11px] font-bold text-gray-400 uppercase tracking-wider mb-1 block">Assessment Evidence</span>
+                        <p class="text-[13px] text-gray-500 italic leading-relaxed border-l-2 border-gray-200 pl-3">"{rec.get("evidence")}"</p>
+                    </div>
+                </div>
+                
+                <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pt-1">
+                    <div class="flex items-center gap-2">
+                        <div class="w-8 h-8 rounded-full bg-blue-50 flex items-center justify-center text-vivo-brand">
+                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6"></path></svg>
+                        </div>
+                        <div>
+                            <span class="text-[11px] font-bold text-gray-400 uppercase tracking-wider block">Expected Outcome</span>
+                            <span class="text-[13px] font-semibold text-vivo-navy">{rec.get("expected_outcome")}</span>
+                        </div>
+                    </div>
+                    <div class="flex items-center gap-2">
+                        <div class="w-8 h-8 rounded-full bg-purple-50 flex items-center justify-center text-purple-600">
+                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z"></path></svg>
+                        </div>
+                        <div>
+                            <span class="text-[11px] font-bold text-gray-400 uppercase tracking-wider block">Reassessment</span>
+                            <span class="text-[13px] font-semibold text-vivo-navy">{rec.get("suggested_reassessment")}</span>
+                        </div>
+                    </div>
+                </div>
+                
+            </div>
+        </div>
+        '''
+        
+
+    html = f'''
+    <div class="animate-fade-in pl-2 relative pb-8">
+        {cards_html}
+    </div>
+    '''
+    return HTMLResponse(content=html)
 
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run("main:app", host="0.0.0.0", port=8002, reload=True)
+
