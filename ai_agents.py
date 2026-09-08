@@ -245,7 +245,7 @@ def run_assessment_integrity_agent(generated_questions: dict, blueprint: dict) -
                 "defect_reason": "string (null if approved)"
             }}
         ],
-        "final_questions": [
+        "replacements": [
             {{
                 "slot_id": number,
                 "domain": "string",
@@ -274,7 +274,22 @@ def run_assessment_integrity_agent(generated_questions: dict, blueprint: dict) -
             json_str = json_str[7:]
         if json_str.endswith("```"):
             json_str = json_str[:-3]
-        return json.loads(json_str)
+        ai5_output = json.loads(json_str)
+        
+        # Merge replacements with original questions to construct final_questions
+        replacements_map = {q["slot_id"]: q for q in ai5_output.get("replacements", [])}
+        final_questions = []
+        
+        original_questions = generated_questions.get("questions", [])
+        for q in original_questions:
+            slot_id = q.get("slot_id")
+            if slot_id in replacements_map:
+                final_questions.append(replacements_map[slot_id])
+            else:
+                final_questions.append(q)
+                
+        ai5_output["final_questions"] = final_questions
+        return ai5_output
     except Exception as e:
         print(f"Error parsing AI-5 JSON: {e}")
         # Fallback to the original generated questions if the integrity agent fails
@@ -342,3 +357,63 @@ def run_response_evaluation_agent(questions: list, user_responses: dict) -> dict
     except Exception as e:
         print(f"Error parsing AI-6 JSON: {e}")
         return {"evaluations": []}
+
+
+def run_learning_recommendation_agent(assessment_results: dict, expected_level: int) -> dict:
+    """
+    AI-8: Learning Recommendation Agent (Prompt F)
+    Translates demonstrated gaps into focused development actions.
+    """
+    model = genai.GenerativeModel("gemini-3.5-flash") # Using 3.5 flash to bypass rate limits
+    
+    prompt = f"""
+    SYSTEM ROLE
+    You are the VivoIQ Procurement Capability Development Advisor.
+    
+    OBJECTIVE
+    Recommend only learning that closes demonstrated capability gaps.
+    
+    RULES
+    1. Prioritize gaps that materially affect the candidate's current or target capability level.
+    2. Do not recommend training in areas already strongly demonstrated unless it is an optional advanced pathway.
+    3. For each recommendation state: gap, evidence, priority, recommended VivoIQ learning asset, expected outcome and suggested reassessment point.
+    4. Distinguish mandatory development from optional enrichment.
+    5. Keep the learning pathway focused and achievable (maximum 4 recommendations).
+    
+    OUTPUT FORMAT:
+    Return ONLY a valid JSON object without any markdown formatting. The JSON must exactly match this schema:
+    {{
+        "learning_pathway": [
+            {{
+                "domain": "string (from ontology)",
+                "gap": "string",
+                "evidence": "string (brief context from assessment)",
+                "priority": "High | Medium | Low",
+                "type": "mandatory | optional",
+                "recommended_asset": "string (e.g. Cost modelling micro-course, Advanced sourcing strategy workshop)",
+                "expected_outcome": "string",
+                "suggested_reassessment": "string (e.g. After 2 weeks of practice)"
+            }}
+        ]
+    }}
+    
+    VIVOIQ COMPETENCY ONTOLOGY:
+    {json.dumps(COMPETENCY_ONTOLOGY)}
+    
+    EXPECTED VIVOIQ LEVEL: {expected_level}
+    
+    VERIFIED ASSESSMENT RESULTS (AI-7 Breakdown):
+    {json.dumps(assessment_results, indent=2)}
+    """
+    
+    try:
+        response = model.generate_content(prompt)
+        json_str = response.text.strip()
+        if json_str.startswith("```json"):
+            json_str = json_str[7:]
+        if json_str.endswith("```"):
+            json_str = json_str[:-3]
+        return json.loads(json_str)
+    except Exception as e:
+        print(f"Error parsing AI-8 JSON: {e}")
+        return {"learning_pathway": []}
