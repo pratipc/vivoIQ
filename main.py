@@ -1,5 +1,5 @@
 from fastapi import FastAPI, Request, UploadFile, File, Form, Depends
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, Response
 from fastapi.templating import Jinja2Templates
 from dotenv import load_dotenv
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -8,6 +8,8 @@ from sqlalchemy import text
 import sys
 import os
 import io
+import base64
+import qrcode
 import PyPDF2
 import google.generativeai as genai
 import json
@@ -217,7 +219,7 @@ async def assessment_onboarding(request: Request, session: AsyncSession = Depend
             <div class="flex flex-col items-center relative z-10 w-8">
                 <div class="w-6 h-6 rounded-full bg-white border-[2px] border-gray-200 text-gray-300 flex items-center justify-center">
                 </div>
-                <span class="text-[11px] font-medium text-gray-400 mt-2 absolute top-6 whitespace-nowrap">Test</span>
+                <span class="text-[11px] font-medium text-gray-400 mt-2 absolute top-6 whitespace-nowrap">Assessment</span>
             </div>
             
             <div class="flex-grow h-[2px] bg-gray-200 mx-2"></div>
@@ -460,7 +462,7 @@ async def upload_resume(
                     <div class="flex-grow h-[2px] bg-blue-500 mx-2"></div>
                     <div class="flex flex-col items-center relative z-10 w-8">
                         <div class="w-6 h-6 rounded-full bg-blue-500 text-white flex items-center justify-center shadow-sm"><div class="w-2 h-2 rounded-full bg-white"></div></div>
-                        <span class="text-[11px] font-semibold text-vivo-navy mt-2 absolute top-6 whitespace-nowrap">Test</span>
+                        <span class="text-[11px] font-semibold text-vivo-navy mt-2 absolute top-6 whitespace-nowrap">Assessment</span>
                     </div>
                     <div class="flex-grow h-[2px] bg-gray-200 mx-2"></div>
                     <div class="flex flex-col items-center relative z-10 w-8">
@@ -1428,8 +1430,8 @@ async def view_results(request: Request, resume_id: int, session: AsyncSession =
     critical = ai7_results.get("critical_failure", False)
     domain_scores = ai7_results.get("domain_scores", {})
     
-    # 2. Get Expected Level & Profile
-    prof_res = await session.execute(text("SELECT expected_level, profile_json FROM candidate_profiles WHERE resume_id = :r_id ORDER BY id DESC LIMIT 1"), {"r_id": resume_id})
+    # 2. Get Expected Level & Profile via Stored Procedure
+    prof_res = await session.execute(text("CALL GetCandidateProfileWithLevel(:r_id)"), {"r_id": resume_id})
     prof_row = prof_res.mappings().first()
     expected_level = 1
     level_name = "Foundation"
@@ -1474,7 +1476,54 @@ async def view_results(request: Request, resume_id: int, session: AsyncSession =
             status_msg = "Development Required"
         cert_color = "text-amber-500"
         cert_bg = "bg-amber-50 border-amber-200"
-        
+    # Domains below 50% for clear feedback
+    sub_50_domains = [f"{dom} ({data.get('percentage', 0):.1f}%)" for dom, data in domain_scores.items() if data.get('percentage', 0) < 50.0]
+
+    if passed:
+        action_cta_html = f"""
+        <div class="bg-white rounded-[16px] shadow-sm border border-emerald-200 p-6">
+            <div class="flex items-center justify-between mb-3">
+                <h3 class="text-[14px] font-bold text-vivo-navy">VivoIQ Credential</h3>
+                <span class="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-100 text-emerald-800">Verified</span>
+            </div>
+            <p class="text-[13px] text-gray-500 mb-5">Your capability profile has been verified. You have earned your official VivoIQ Credential and are eligible to proceed.</p>
+            <div class="space-y-3">
+                <a href="/assessment/certificate?resume_id={resume_id}" class="w-full px-5 py-3.5 bg-vivo-brand hover:bg-blue-600 text-white font-bold text-[13px] rounded-[10px] transition-colors shadow-sm shadow-blue-200 flex items-center justify-center gap-2 cursor-pointer">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z"></path></svg>
+                    Claim & View Certificate
+                </a>
+                <button class="w-full px-5 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold text-[13px] rounded-[10px] transition-colors">
+                    Attempt Next Level
+                </button>
+            </div>
+        </div>
+        """
+    else:
+        if score >= 70.0 and sub_50_domains:
+            lock_desc = f"Overall score achieved is <strong>{score:.1f}%</strong> (≥ 70% threshold met), but credential issuance is currently locked because Section 9 requires a minimum of 50% across all competency domains. Domain gap(s) below 50%: <span class='font-semibold text-amber-700'>{', '.join(sub_50_domains)}</span>."
+        else:
+            lock_desc = f"VivoIQ certification requires an overall score of <strong>≥ 70%</strong> with no critical domain below 50% (Current score: <strong>{score:.1f}%</strong>)."
+            
+        action_cta_html = f"""
+        <div class="bg-white rounded-[16px] shadow-sm border border-amber-200 p-6">
+            <div class="flex items-center justify-between mb-3">
+                <h3 class="text-[14px] font-bold text-vivo-navy">VivoIQ Credential Status</h3>
+                <span class="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold bg-amber-100 text-amber-800">Certificate Locked</span>
+            </div>
+            <p class="text-[12px] text-gray-600 mb-4 leading-relaxed">{lock_desc}</p>
+            <div class="space-y-3">
+                <label for="learning-drawer" hx-get="/assessment/learning-recommendations?resume_id={resume_id}" hx-target="#drawer-content" class="w-full px-5 py-3 bg-slate-900 hover:bg-slate-800 text-white font-bold text-[13px] rounded-[10px] transition-colors shadow-sm cursor-pointer flex items-center justify-center gap-2">
+                    <svg class="w-4 h-4 text-emerald-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"></path></svg>
+                    Build My Capability
+                </label>
+                <div class="w-full px-4 py-2 bg-slate-50 border border-dashed border-slate-200 text-slate-400 text-[11px] font-medium rounded-[10px] flex items-center justify-center gap-2 select-none text-center">
+                    <svg class="w-3.5 h-3.5 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"></path></svg>
+                    Complete pathway to unlock certificate upon reassessment
+                </div>
+            </div>
+        </div>
+        """
+
     # Build Domain Radar HTML
     domains_html = ""
     for dom, data in domain_scores.items():
@@ -1524,202 +1573,243 @@ async def view_results(request: Request, resume_id: int, session: AsyncSession =
             </div>
         </div>
         
-        <div class="text-center mb-8">
-            <h1 class="text-3xl font-bold text-vivo-navy tracking-tight mb-2">VivoIQ Capability Report</h1>
-            <p class="text-[15px] font-medium text-gray-500">Attempted Target: <span class="text-vivo-brand font-bold">{level_text}</span></p>
+        <!-- Capability Report White Card Wrapper -->
+        <div class="w-full bg-white rounded-[12px] shadow-sm border border-gray-200 p-8 lg:p-10 mx-auto">
+            <div class="text-center mb-8">
+                <h1 class="text-3xl font-extrabold text-vivo-navy tracking-tight mb-2">VivoIQ Capability Report</h1>
+                <p class="text-[14px] text-gray-500 font-medium">Verified assessment evaluation & capability tier credential</p>
+            </div>
+            
+            <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                
+                <!-- Left Column: Primary Verified Score & Level Card -->
+                <div class="lg:col-span-1 flex flex-col gap-6">
+                    <!-- Score Badge Card -->
+                    <div class="bg-white rounded-[16px] shadow-sm border {cert_bg} p-8 text-center flex flex-col items-center justify-center">
+                        <div class="w-16 h-16 rounded-full bg-white border border-gray-100 flex items-center justify-center mb-4 {cert_color} shadow-sm">
+                        </div>
+                        
+                        <h2 class="text-[22px] font-bold text-vivo-navy tracking-tight mb-1">{"Capability Verified" if passed else "Capability Gap Identified"}</h2>
+                        <p class="text-[13px] font-bold {cert_color} mb-6">{status_msg}</p>
+                        
+                        <div class="inline-flex flex-col items-center justify-center border-[4px] {cert_color.replace('text', 'border')} rounded-full w-36 h-36 shadow-sm bg-white">
+                            <span class="text-4xl font-bold text-vivo-navy">{score:.1f}%</span>
+                            <span class="text-[10px] font-bold text-gray-400 uppercase tracking-wider mt-1">Overall Score</span>
+                        </div>
+                    </div>
+                    <!-- Action CTA -->
+                    {action_cta_html}
+                </div>
+                
+                <!-- Right Column: Radar & Breakdown -->
+                <div class="lg:col-span-2 flex flex-col gap-6">
+                    <!-- Top 3 Strengths / Priorities -->
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div class="bg-white rounded-[16px] shadow-sm border border-emerald-100 p-6">
+                            <h3 class="text-[14px] font-bold text-emerald-700 mb-3">Top Demonstrated Strengths</h3>
+                            <ul class="space-y-1">
+                                {strengths_html}
+                            </ul>
+                        </div>
+                        <div class="bg-white rounded-[16px] shadow-sm border border-amber-100 p-6">
+                            <h3 class="text-[14px] font-bold text-amber-700 mb-3">Development Priorities</h3>
+                            <ul class="space-y-1">
+                                {gaps_html}
+                            </ul>
+                        </div>
+                    </div>
+                    
+                    <!-- Domain Radar -->
+                    <div class="bg-white rounded-[16px] shadow-sm border border-gray-100 p-8 flex-grow">
+                        <h3 class="text-lg font-bold text-vivo-navy mb-1">Domain-by-Domain Capability</h3>
+                        <p class="text-[13px] text-gray-500 mb-8">Performance against {level_text} expectations. (Pass criteria: 70% overall, no critical domain below 50%)</p>
+                        
+                        <div class="space-y-3">
+                            {domains_html}
+                        </div>
+                    </div>
+                
+                </div>
+            </div>
         </div>
-        
-        <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
-            
-            <!-- Left Column: Final Score & Status -->
-            <div class="lg:col-span-1 flex flex-col gap-6">
-                <!-- Status Card -->
-                <div class="bg-white rounded-[16px] shadow-sm border {cert_bg} p-8 text-center flex flex-col items-center justify-center">
-                    <div class="w-16 h-16 rounded-full bg-white border border-gray-100 flex items-center justify-center mb-4 {cert_color} shadow-sm">
-                        {f'<svg class="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M5 13l4 4L19 7"></path></svg>' if passed else f'<svg class="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"></path></svg>'}
-                    </div>
-                    
-                    <h2 class="text-[22px] font-bold text-vivo-navy tracking-tight mb-1">{"Capability Verified" if passed else "Capability Gap Identified"}</h2>
-                    <p class="text-[13px] font-bold {cert_color} mb-6">{status_msg}</p>
-                    
-                    <div class="inline-flex flex-col items-center justify-center border-[4px] {cert_color.replace('text', 'border')} rounded-full w-36 h-36 shadow-sm bg-white">
-                        <span class="text-4xl font-bold text-vivo-navy">{score:.1f}%</span>
-                        <span class="text-[10px] font-bold text-gray-400 uppercase tracking-wider mt-1">Overall Score</span>
-                    </div>
-                </div>
-                
-                <!-- Action CTA -->
-                <div class="bg-white rounded-[16px] shadow-sm border border-gray-200 p-6">
-                    <h3 class="text-[14px] font-bold text-vivo-navy mb-4">Next Steps</h3>
-                    <p class="text-[13px] text-gray-500 mb-6">{"Your capability profile has been updated. You are eligible to proceed to the next tier." if passed else "Based on your verified gaps, an AI-tailored learning pathway is highly recommended before reassessment."}</p>
-                    
-                    {f"""<button class="w-full px-5 py-3 bg-vivo-brand hover:bg-blue-600 text-white font-bold text-[13px] rounded-[10px] transition-colors shadow-sm focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-vivo-brand">Attempt Next Level</button>""" if passed else f"""<label for="learning-drawer" hx-get="/assessment/learning-recommendations?resume_id={resume_id}" hx-target="#drawer-content" class="w-full px-5 py-3 bg-slate-800 hover:bg-slate-700 text-white font-bold text-[13px] rounded-[10px] transition-colors shadow-sm cursor-pointer block text-center">Build My Capability</label>"""}
-
-                </div>
-            </div>
-            
-            <!-- Right Column: Radar & Breakdown -->
-            <div class="lg:col-span-2 flex flex-col gap-6">
-                <!-- Top 3 Strengths / Priorities -->
-                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <div class="bg-white rounded-[16px] shadow-sm border border-emerald-100 p-6">
-                        <h3 class="text-[14px] font-bold text-emerald-700 mb-3">Top Demonstrated Strengths</h3>
-                        <ul class="space-y-1">
-                            {strengths_html}
-                        </ul>
-                    </div>
-                    <div class="bg-white rounded-[16px] shadow-sm border border-amber-100 p-6">
-                        <h3 class="text-[14px] font-bold text-amber-700 mb-3">Development Priorities</h3>
-                        <ul class="space-y-1">
-                            {gaps_html}
-                        </ul>
-                    </div>
-                </div>
-                
-                <!-- Domain Radar -->
-                <div class="bg-white rounded-[16px] shadow-sm border border-gray-100 p-8 flex-grow">
-                    <h3 class="text-lg font-bold text-vivo-navy mb-1">Domain-by-Domain Capability</h3>
-                    <p class="text-[13px] text-gray-500 mb-8">Performance against {level_text} expectations. (Pass criteria: 70% overall, no critical domain below 50%)</p>
-                    
-                    <div class="space-y-3">
-                        {domains_html}
-                    </div>
-                </div>
-            
-            </div>
-            </div>
             
         </div>
         
     </div>
     
-    <!-- Drawer Root (Slide-Over Panel) -->
-    <div class="drawer drawer-end absolute inset-0 z-[100] pointer-events-none">
-      <input id="learning-drawer" type="checkbox" class="drawer-toggle" />
-      <div class="drawer-side pointer-events-auto">
-        <label for="learning-drawer" aria-label="close sidebar" class="drawer-overlay bg-vivo-navy/40 backdrop-blur-sm transition-all duration-300"></label>
-        <div class="menu bg-white text-base-content min-h-full w-[100vw] sm:w-[500px] p-0 shadow-2xl flex flex-col transition-transform duration-300">
-          
-          <!-- Drawer Header -->
-          <div class="p-8 border-b border-gray-100 flex items-center justify-between bg-white/90 backdrop-blur-md sticky top-0 z-20">
-              <div class="flex items-center gap-4">
-                  <div class="w-12 h-12 rounded-2xl bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center text-white shadow-lg shadow-indigo-200">
-                      <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19.428 15.428a2 2 0 00-1.022-.547l-2.387-.477a6 6 0 00-3.86.517l-.318.158a6 6 0 01-3.86.517L6.05 15.21a2 2 0 00-1.806.547M8 4h8l-1 1v5.172a2 2 0 00.586 1.414l5 5c1.26 1.26.367 3.414-1.415 3.414H4.828c-1.782 0-2.674-2.154-1.414-3.414l5-5A2 2 0 009 10.172V5L8 4z"></path></svg>
-                  </div>
-                  <div>
-                      <h3 class="text-xl font-extrabold text-vivo-navy tracking-tight">AI Capability Pathway</h3>
-                      <p class="text-[13px] text-gray-500 font-medium">Your personalized recovery plan</p>
-                  </div>
-              </div>
-              <label for="learning-drawer" class="w-8 h-8 rounded-full bg-gray-50 hover:bg-gray-100 flex items-center justify-center text-gray-500 cursor-pointer transition-colors">
-                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M6 18L18 6M6 6l12 12"></path></svg>
-              </label>
-          </div>
-          
-          <!-- Drawer Content Area (Targeted by HTMX) -->
-          <div id="drawer-content" class="p-8 overflow-y-auto flex-grow bg-slate-50 relative">
-              <!-- Animated Skeleton Loader (Replaced by HTMX) -->
-              <div class="animate-pulse flex flex-col gap-8 relative z-10 pl-2">
-                  <div class="absolute top-2 left-3 bottom-0 w-0.5 bg-gray-200"></div>
-                  
-                  <div class="relative pl-8">
-                      <div class="absolute top-1.5 -left-1.5 w-6 h-6 rounded-full bg-gray-200 border-2 border-white shadow-sm z-10"></div>
-                      <div class="bg-white rounded-[20px] p-6 border border-gray-100 shadow-sm">
-                          <div class="w-24 h-3 bg-gray-200 rounded-full mb-4"></div>
-                          <div class="w-48 h-5 bg-gray-300 rounded mb-8"></div>
-                          <div class="w-full h-16 bg-gray-100 rounded-xl mb-4"></div>
-                          <div class="flex justify-between mt-6">
-                              <div class="w-24 h-4 bg-gray-100 rounded"></div>
-                              <div class="w-24 h-4 bg-gray-100 rounded"></div>
-                          </div>
-                      </div>
-                  </div>
-                  
-                  <div class="relative pl-8">
-                      <div class="absolute top-1.5 -left-1.5 w-6 h-6 rounded-full bg-gray-200 border-2 border-white shadow-sm z-10"></div>
-                      <div class="bg-white rounded-[20px] p-6 border border-gray-100 shadow-sm">
-                          <div class="w-20 h-3 bg-gray-200 rounded-full mb-4"></div>
-                          <div class="w-40 h-5 bg-gray-300 rounded mb-8"></div>
-                          <div class="w-full h-16 bg-gray-100 rounded-xl mb-4"></div>
-                      </div>
-                  </div>
-              </div>
-          </div>
-          
-          <!-- Drawer Footer -->
-          <div class="p-6 border-t border-gray-100 bg-white">
-              <button class="w-full py-3.5 bg-vivo-brand hover:bg-blue-600 text-white font-bold text-[14px] rounded-xl shadow-sm shadow-blue-200 transition-colors flex items-center justify-center gap-2">
-                  <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path></svg>
-                  Export Learning Plan to PDF
-              </button>
-          </div>
-          
+    <!-- Slide-Over Drawer Component -->
+    <style>
+      #learning-drawer:not(:checked) ~ #drawer-backdrop,
+      #learning-drawer:not(:checked) ~ #drawer-panel {{
+          display: none !important;
+      }}
+      @keyframes slideInRight {{
+          from {{ transform: translateX(100%); }}
+          to {{ transform: translateX(0); }}
+      }}
+      .animate-slide-in {{
+          animation: slideInRight 0.3s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+      }}
+    </style>
+
+    <input id="learning-drawer" type="checkbox" class="hidden" />
+
+    <!-- Backdrop Overlay (Strictly hidden when drawer is closed) -->
+    <label for="learning-drawer" id="drawer-backdrop" class="fixed inset-0 bg-slate-900/40 backdrop-blur-sm z-[100] cursor-pointer transition-opacity"></label>
+
+    <!-- Drawer Panel (Strictly hidden when drawer is closed) -->
+    <div id="drawer-panel" class="fixed inset-y-0 right-0 z-[101] w-full sm:w-[500px] bg-white shadow-2xl flex flex-col animate-slide-in">
+        <!-- Drawer Header -->
+        <div class="p-8 border-b border-gray-100 flex items-center justify-between bg-white sticky top-0 z-20">
+            <div class="flex items-center gap-4">
+                <div class="w-12 h-12 rounded-2xl bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center text-white shadow-lg shadow-indigo-200">
+                    <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19.428 15.428a2 2 0 00-1.022-.547l-2.387-.477a6 6 0 00-3.86.517l-.318.158a6 6 0 01-3.86.517L6.05 15.21a2 2 0 00-1.806.547M8 4h8l-1 1v5.172a2 2 0 00.586 1.414l5 5c1.26 1.26.367 3.414-1.415 3.414H4.828c-1.782 0-2.674-2.154-1.414-3.414l5-5A2 2 0 009 10.172V5L8 4z"></path></svg>
+                </div>
+                <div>
+                    <h3 class="text-xl font-extrabold text-vivo-navy tracking-tight">AI Capability Pathway</h3>
+                    <p class="text-[13px] text-gray-500 font-medium">Your personalized recovery plan</p>
+                </div>
+            </div>
+            <label for="learning-drawer" class="w-8 h-8 rounded-full bg-gray-50 hover:bg-gray-100 flex items-center justify-center text-gray-500 cursor-pointer transition-colors">
+              <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M6 18L18 6M6 6l12 12"></path></svg>
+            </label>
         </div>
-      </div>
+        
+        <!-- Drawer Content Area (Targeted by HTMX) -->
+        <div id="drawer-content" class="p-8 overflow-y-auto flex-grow bg-slate-50 relative">
+            <!-- Animated Skeleton Loader (Replaced by HTMX) -->
+            <div class="animate-pulse flex flex-col gap-8 relative z-10 pl-2">
+                <div class="absolute top-2 left-3 bottom-0 w-0.5 bg-gray-200"></div>
+                
+                <div class="relative pl-8">
+                    <div class="absolute top-1.5 -left-1.5 w-6 h-6 rounded-full bg-gray-200 border-2 border-white shadow-sm z-10"></div>
+                    <div class="bg-white rounded-[20px] p-6 border border-gray-100 shadow-sm">
+                        <div class="w-24 h-3 bg-gray-200 rounded-full mb-4"></div>
+                        <div class="w-48 h-5 bg-gray-300 rounded mb-8"></div>
+                        <div class="w-full h-16 bg-gray-100 rounded-xl mb-4"></div>
+                        <div class="flex justify-between mt-6">
+                            <div class="w-24 h-4 bg-gray-100 rounded"></div>
+                            <div class="w-24 h-4 bg-gray-100 rounded"></div>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="relative pl-8">
+                    <div class="absolute top-1.5 -left-1.5 w-6 h-6 rounded-full bg-gray-200 border-2 border-white shadow-sm z-10"></div>
+                    <div class="bg-white rounded-[20px] p-6 border border-gray-100 shadow-sm">
+                        <div class="w-20 h-3 bg-gray-200 rounded-full mb-4"></div>
+                        <div class="w-40 h-5 bg-gray-300 rounded mb-8"></div>
+                        <div class="w-full h-16 bg-gray-100 rounded-xl mb-4"></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Drawer Footer -->
+        <div class="p-6 border-t border-gray-100 bg-white">
+            <button class="w-full py-3.5 bg-vivo-brand hover:bg-blue-600 text-white font-bold text-[14px] rounded-xl shadow-sm shadow-blue-200 transition-colors flex items-center justify-center gap-2">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path></svg>
+                Export Learning Plan to PDF
+            </button>
+        </div>
     </div>
     '''
-    is_htmx = request.headers.get("hx-request") == "true"
-    if not is_htmx:
-        html_content = f"""<!DOCTYPE html>
-<html lang="en" data-theme="light">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>VivoIQ - Capability Report</title>
-    <script src="https://cdn.tailwindcss.com"></script>
-    <script src="https://unpkg.com/htmx.org@1.9.10"></script>
-    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-    <link href="https://cdn.jsdelivr.net/npm/daisyui@4.7.2/dist/full.min.css" rel="stylesheet" type="text/css" />
-    <style>
-        @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap');
-        body {{ font-family: 'Plus Jakarta Sans', sans-serif; }}
-        .text-vivo-navy {{ color: #0F172A; }}
-        .bg-vivo-navy {{ background-color: #0F172A; }}
-        .text-vivo-brand {{ color: #2563EB; }}
-        .bg-vivo-brand {{ background-color: #2563EB; }}
-        .animate-fade-in-up {{ animation: fadeInUp 0.5s ease-out forwards; opacity: 0; transform: translateY(10px); }}
-        @keyframes fadeInUp {{ to {{ opacity: 1; transform: translateY(0); }} }}
-    </style>
-</head>
-<body class="bg-slate-50 min-h-screen text-slate-800 antialiased">
-    <div id="main-content">
-        {html_content}
-    </div>
-</body>
-</html>"""
-
     return HTMLResponse(content=html_content)
 
 
+
+def format_evidence_user_friendly(evidence_text: str) -> str:
+    if not evidence_text:
+        return ""
+    import re
+    cleaned = re.sub(r'\s*\([qQ]\d+\)', '', evidence_text).strip()
+    score_match = re.match(r'Scored\s+(\d+(?:\.\d+)?%)\s+in\s+([^,]+),\s*(.*)', cleaned, re.IGNORECASE)
+    score_badge = ""
+    details = cleaned
+    
+    if score_match:
+        score_val = score_match.group(1)
+        details = score_match.group(3).strip()
+        score_badge = f'''
+        <div class="flex items-center gap-2 mb-2">
+            <span class="inline-flex items-center px-2 py-0.5 rounded-md text-[11px] font-bold bg-rose-50 text-rose-700 border border-rose-200">
+                Score: {score_val}
+            </span>
+            <span class="text-[11px] font-medium text-slate-500">Benchmark target not met</span>
+        </div>
+        '''
+    
+    softened = re.sub(r'^(failed calculations for|failed|failing to|struggling to articulate|struggling to|inability to)\s+', '', details, flags=re.IGNORECASE).strip()
+    if softened:
+        softened = softened[0].upper() + softened[1:]
+    else:
+        softened = details
+        
+    return f'''
+    {score_badge}
+    <div class="flex items-start gap-2 text-slate-700 text-[13px] leading-relaxed">
+        <svg class="w-4 h-4 text-amber-500 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+        </svg>
+        <span class="font-normal text-slate-700">{softened}</span>
+    </div>
+    '''
 
 @app.get("/assessment/learning-recommendations", response_class=HTMLResponse)
 async def generate_learning_recommendations(resume_id: int, request: Request, session: AsyncSession = Depends(get_session)):
     user_id_cookie = request.cookies.get("user_id")
     if not user_id_cookie: return HTMLResponse("Unauthorized", status_code=401)
+    user_id = int(user_id_cookie)
     
-    # 1. Get Assessment Result
-    result = await session.execute(text("CALL GetLatestAssessmentResult(:r_id)"), {"r_id": resume_id})
-    score_row = result.mappings().first()
-    if not score_row: return HTMLResponse("Results not found", status_code=404)
+    # 0. Check if learning pathway was already generated and cached in DB via Stored Procedure
+    cached_res = await session.execute(
+        text("CALL GetLearningPathwayByResumeId(:r_id)"),
+        {"r_id": resume_id}
+    )
+    cached_row = cached_res.mappings().first()
     
-    try:
-        ai7_results = json.loads(score_row["breakdown_json"])
-    except:
-        return HTMLResponse("Invalid results format", status_code=500)
+    recommendations = None
+    if cached_row and cached_row.get("pathway_json"):
+        try:
+            recommendations = json.loads(cached_row["pathway_json"])
+        except Exception:
+            recommendations = None
+            
+    if not recommendations:
+        # 1. Get Assessment Result via Stored Procedure
+        result = await session.execute(text("CALL GetLatestAssessmentResult(:r_id)"), {"r_id": resume_id})
+        score_row = result.mappings().first()
+        if not score_row: return HTMLResponse("Results not found", status_code=404)
         
-    # 2. Get Expected Level
-    prof_res = await session.execute(text("SELECT expected_level FROM candidate_profiles WHERE resume_id = :r_id ORDER BY id DESC LIMIT 1"), {"r_id": resume_id})
-    prof_row = prof_res.mappings().first()
-    expected_level = prof_row.get("expected_level", 1) if prof_row else 1
-    
-    # 3. Call AI-8
-    from ai_agents import run_learning_recommendation_agent
-    recommendations = run_learning_recommendation_agent(ai7_results, expected_level)
-    
+        try:
+            ai7_results = json.loads(score_row["breakdown_json"])
+        except:
+            return HTMLResponse("Invalid results format", status_code=500)
+            
+        # 2. Get Expected Level via Stored Procedure
+        prof_res = await session.execute(text("CALL GetCandidateProfileWithLevel(:r_id)"), {"r_id": resume_id})
+        prof_row = prof_res.mappings().first()
+        expected_level = prof_row.get("expected_level", 1) if prof_row else 1
+        
+        # 3. Call AI-8
+        from ai_agents import run_learning_recommendation_agent
+        recommendations = run_learning_recommendation_agent(ai7_results, expected_level)
+        
+        pathway = recommendations.get("learning_pathway", [])
+        if not pathway:
+            return HTMLResponse("<div class='p-6 bg-red-50 text-red-600 rounded-[16px] shadow-sm'>Failed to generate learning pathway. Please try again.</div>")
+            
+        # 4. Cache in Database via Stored Procedure
+        try:
+            await session.execute(
+                text("CALL SaveLearningPathway(:u_id, :r_id, :p_json)"),
+                {"u_id": user_id, "r_id": resume_id, "p_json": json.dumps(recommendations)}
+            )
+            await session.commit()
+        except Exception as e:
+            print(f"Error caching learning pathway: {e}")
+            
     pathway = recommendations.get("learning_pathway", [])
-    
-    if not pathway:
-        return HTMLResponse("<div class='p-6 bg-red-50 text-red-600 rounded-[16px] shadow-sm'>Failed to generate learning pathway. Please try again.</div>")
         
     cards_html = ""
     for i, rec in enumerate(pathway):
@@ -1742,6 +1832,7 @@ async def generate_learning_recommendations(resume_id: int, request: Request, se
             
         is_mandatory = str(rec.get("type", "")).lower() == "mandatory"
         badge_html = f'<span class="px-2.5 py-1 bg-slate-800 text-white rounded-full text-[10px] font-bold uppercase tracking-wider shadow-sm">{"Mandatory" if is_mandatory else "Optional"}</span>'
+        formatted_evidence = format_evidence_user_friendly(rec.get("evidence", ""))
         
         cards_html += f'''
         <div class="relative pl-8 pb-8 group">
@@ -1764,14 +1855,26 @@ async def generate_learning_recommendations(resume_id: int, request: Request, se
                     <div>{badge_html}</div>
                 </div>
                 
-                <div class="bg-gray-50/50 rounded-[12px] p-4 mb-5 border border-gray-100/50">
-                    <div class="mb-3">
-                        <span class="text-[11px] font-bold text-gray-400 uppercase tracking-wider mb-1 block">Identified Gap</span>
-                        <p class="text-[13px] text-gray-700 leading-relaxed font-medium">{rec.get("gap")}</p>
+                <div class="space-y-3 mb-5">
+                    <!-- Identified Gap Focus -->
+                    <div class="bg-amber-50/50 rounded-[14px] p-4 border border-amber-200/60">
+                        <span class="text-[11px] font-bold text-amber-800 uppercase tracking-wider mb-1 flex items-center gap-1.5">
+                            <svg class="w-3.5 h-3.5 text-amber-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"></path></svg>
+                            Capability Gap Focus
+                        </span>
+                        <p class="text-[13px] text-slate-800 leading-relaxed font-semibold">{rec.get("gap")}</p>
                     </div>
-                    <div>
-                        <span class="text-[11px] font-bold text-gray-400 uppercase tracking-wider mb-1 block">Assessment Evidence</span>
-                        <p class="text-[13px] text-gray-500 italic leading-relaxed border-l-2 border-gray-200 pl-3">"{rec.get("evidence")}"</p>
+                    
+                    <!-- Observed in Assessment (User-Friendly Evidence) -->
+                    <div class="bg-slate-50/80 rounded-[14px] p-4 border border-slate-200/80">
+                        <div class="flex items-center justify-between mb-2">
+                            <span class="text-[11px] font-bold text-slate-500 uppercase tracking-wider flex items-center gap-1.5">
+                                <svg class="w-3.5 h-3.5 text-blue-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"></path></svg>
+                                Observed in Assessment
+                            </span>
+                            <span class="text-[10px] font-semibold text-slate-400 bg-white px-2 py-0.5 rounded border border-slate-200">Diagnostic Insight</span>
+                        </div>
+                        {formatted_evidence}
                     </div>
                 </div>
                 
@@ -1807,6 +1910,790 @@ async def generate_learning_recommendations(resume_id: int, request: Request, se
     </div>
     '''
     return HTMLResponse(content=html)
+
+def build_certificate_pdf(
+    candidate_name: str,
+    cred_id: str,
+    verified_level: str,
+    cert_title: str,
+    score: float,
+    issued_date: str,
+    narrative_summary: str,
+    verified_domains: list,
+    scope_of_practice: str = "",
+    has_distinction: bool = False,
+    distinction_title: str = "Conferred with High Distinction"
+) -> bytes:
+    from reportlab.lib.pagesizes import landscape, A4
+    from reportlab.lib import colors
+    from reportlab.pdfgen import canvas
+    from reportlab.platypus import Paragraph
+    from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+    from reportlab.lib.utils import ImageReader
+    import qrcode
+
+    buffer = io.BytesIO()
+    page_w, page_h = landscape(A4)
+    c = canvas.Canvas(buffer, pagesize=(page_w, page_h))
+    
+    margin = 22
+    c.setFillColor(colors.HexColor("#FFFFFF"))
+    c.rect(0, 0, page_w, page_h, fill=1, stroke=0)
+    
+    # Outer Border
+    c.setStrokeColor(colors.HexColor("#0f172a"))
+    c.setLineWidth(4)
+    c.roundRect(margin, margin, page_w - 2 * margin, page_h - 2 * margin, 12, fill=0, stroke=1)
+    
+    # Second Thin Border
+    c.setStrokeColor(colors.HexColor("#334155"))
+    c.setLineWidth(0.8)
+    c.roundRect(margin + 4, margin + 4, page_w - 2 * margin - 8, page_h - 2 * margin - 8, 10, fill=0, stroke=1)
+
+    # Inner Gold Border
+    gold_color = colors.HexColor("#d97706")
+    c.setStrokeColor(gold_color)
+    c.setLineWidth(1.5)
+    c.roundRect(margin + 10, margin + 10, page_w - 2 * margin - 20, page_h - 2 * margin - 20, 8, fill=0, stroke=1)
+
+    # Corner Accents (Gold)
+    accent_len = 25
+    c.setStrokeColor(gold_color)
+    c.setLineWidth(2)
+    c.line(margin + 16, page_h - margin - 16, margin + 16 + accent_len, page_h - margin - 16)
+    c.line(margin + 16, page_h - margin - 16, margin + 16, page_h - margin - 16 - accent_len)
+    c.line(page_w - margin - 16, page_h - margin - 16, page_w - margin - 16 - accent_len, page_h - margin - 16)
+    c.line(page_w - margin - 16, page_h - margin - 16, page_w - margin - 16, page_h - margin - 16 - accent_len)
+    c.line(margin + 16, margin + 16, margin + 16 + accent_len, margin + 16)
+    c.line(margin + 16, margin + 16, margin + 16, margin + 16 + accent_len)
+    c.line(page_w - margin - 16, margin + 16, page_w - margin - 16 - accent_len, margin + 16)
+    c.line(page_w - margin - 16, margin + 16, page_w - margin - 16, margin + 16 + accent_len)
+
+    # Header Branding
+    c.setFont("Helvetica-Bold", 24)
+    c.setFillColor(colors.HexColor("#0f172a"))
+    c.drawCentredString(page_w / 2.0, page_h - 60, "V I V O I Q")
+    
+    c.setFont("Helvetica-Bold", 7.5)
+    c.setFillColor(colors.HexColor("#64748b"))
+    c.drawCentredString(page_w / 2.0, page_h - 73, "GLOBAL PROCUREMENT CAPABILITY VERIFICATION REGISTRY")
+
+    # Credential Type Badge
+    badge_text = "OFFICIAL EVALUATION CREDENTIAL • SECTION 11 VERIFIED"
+    c.setFont("Helvetica-Bold", 8)
+    badge_w = c.stringWidth(badge_text, "Helvetica-Bold", 8) + 16
+    badge_x = (page_w - badge_w) / 2.0
+    c.setFillColor(colors.HexColor("#eff6ff"))
+    c.setStrokeColor(colors.HexColor("#bfdbfe"))
+    c.setLineWidth(0.8)
+    c.roundRect(badge_x, page_h - 96, badge_w, 16, 4, fill=1, stroke=1)
+    c.setFillColor(colors.HexColor("#1d4ed8"))
+    c.drawCentredString(page_w / 2.0, page_h - 92, badge_text)
+
+    # Credential Title
+    c.setFont("Helvetica-Bold", 18)
+    c.setFillColor(colors.HexColor("#0f172a"))
+    c.drawCentredString(page_w / 2.0, page_h - 122, cert_title)
+
+    # Optional Distinction
+    if has_distinction:
+        c.setFont("Helvetica-Bold", 9)
+        c.setFillColor(colors.HexColor("#b45309"))
+        dist_text = f"★  {distinction_title} • Top Tier Performance ({score:.1f}%)  ★"
+        c.drawCentredString(page_w / 2.0, page_h - 138, dist_text)
+        current_y = page_h - 156
+    else:
+        current_y = page_h - 146
+
+    # Candidate Name
+    c.setFont("Helvetica-Oblique", 10.5)
+    c.setFillColor(colors.HexColor("#64748b"))
+    c.drawCentredString(page_w / 2.0, current_y, "This certifies that")
+    current_y -= 26
+
+    c.setFont("Times-Bold", 26)
+    c.setFillColor(colors.HexColor("#0f172a"))
+    c.drawCentredString(page_w / 2.0, current_y, candidate_name)
+    
+    name_w = c.stringWidth(candidate_name, "Times-Bold", 26)
+    c.setStrokeColor(gold_color)
+    c.setLineWidth(1.5)
+    c.line((page_w - name_w) / 2.0, current_y - 4, (page_w + name_w) / 2.0, current_y - 4)
+    current_y -= 20
+
+    # Framework Standard Statement (Section 11)
+    c.setFont("Helvetica", 9.5)
+    c.setFillColor(colors.HexColor("#475569"))
+    stmt1 = "has demonstrated verified professional capability through the VivoIQ AI-Enabled Adaptive Assessment."
+    stmt2 = f"Verified Competency Tier: {verified_level}   |   Evaluation Score: {score:.1f}%"
+    c.drawCentredString(page_w / 2.0, current_y, stmt1)
+    current_y -= 14
+    c.setFont("Helvetica-Bold", 10)
+    c.setFillColor(colors.HexColor("#1e3a8a"))
+    c.drawCentredString(page_w / 2.0, current_y, stmt2)
+    current_y -= 24
+
+    # Middle Grid: Narrative & Competencies
+    grid_y = current_y
+    grid_h = 105
+    col_w = (page_w - 2 * margin - 70) / 2.0
+    left_x = margin + 30
+    right_x = left_x + col_w + 10
+
+    # Left Box: AI Capability Narrative
+    c.setFillColor(colors.HexColor("#f8fafc"))
+    c.setStrokeColor(colors.HexColor("#e2e8f0"))
+    c.setLineWidth(0.8)
+    c.roundRect(left_x, grid_y - grid_h, col_w, grid_h, 6, fill=1, stroke=1)
+
+    c.setFont("Helvetica-Bold", 8)
+    c.setFillColor(colors.HexColor("#2563eb"))
+    c.drawString(left_x + 12, grid_y - 18, "VERIFIED CAPABILITY NARRATIVE")
+
+    styles = getSampleStyleSheet()
+    narrative_style = ParagraphStyle(
+        'Narrative',
+        fontName='Helvetica-Oblique',
+        fontSize=8.5,
+        leading=12.5,
+        textColor=colors.HexColor("#334155")
+    )
+    p_narrative = Paragraph(f'"{narrative_summary}"', narrative_style)
+    w_p, h_p = p_narrative.wrap(col_w - 24, grid_h - 30)
+    p_narrative.drawOn(c, left_x + 12, grid_y - 26 - h_p)
+
+    # Right Box: Verified Domains & Scope
+    c.setFillColor(colors.HexColor("#f8fafc"))
+    c.setStrokeColor(colors.HexColor("#e2e8f0"))
+    c.setLineWidth(0.8)
+    c.roundRect(right_x, grid_y - grid_h, col_w, grid_h, 6, fill=1, stroke=1)
+
+    c.setFont("Helvetica-Bold", 8)
+    c.setFillColor(colors.HexColor("#059669"))
+    c.drawString(right_x + 12, grid_y - 18, "PRIMARY VERIFIED COMPETENCY DOMAINS")
+
+    d_x = right_x + 12
+    d_y = grid_y - 38
+    for d in verified_domains[:6]:
+        c.setFont("Helvetica-Bold", 7.5)
+        t_w = c.stringWidth(d, "Helvetica-Bold", 7.5) + 12
+        if d_x + t_w > right_x + col_w - 12:
+            d_x = right_x + 12
+            d_y -= 18
+        c.setFillColor(colors.HexColor("#ecfdf5"))
+        c.setStrokeColor(colors.HexColor("#a7f3d0"))
+        c.setLineWidth(0.6)
+        c.roundRect(d_x, d_y, t_w, 14, 3, fill=1, stroke=1)
+        c.setFillColor(colors.HexColor("#065f46"))
+        c.drawString(d_x + 6, d_y + 3.5, d)
+        d_x += t_w + 6
+
+    if scope_of_practice:
+        c.setFont("Helvetica-Bold", 7.5)
+        c.setFillColor(colors.HexColor("#64748b"))
+        c.drawString(right_x + 12, grid_y - 74, "OPERATIONAL SCOPE:")
+        scope_style = ParagraphStyle(
+            'Scope',
+            fontName='Helvetica',
+            fontSize=7.5,
+            leading=10.5,
+            textColor=colors.HexColor("#475569")
+        )
+        p_scope = Paragraph(scope_of_practice, scope_style)
+        w_s, h_s = p_scope.wrap(col_w - 24, 26)
+        p_scope.drawOn(c, right_x + 12, grid_y - 78 - h_s)
+
+    # Bottom Signatures, QR Code & Seal
+    bottom_y = grid_y - grid_h - 15
+    c.setStrokeColor(colors.HexColor("#cbd5e1"))
+    c.setLineWidth(0.6)
+    c.line(margin + 30, bottom_y + 5, page_w - margin - 30, bottom_y + 5)
+
+    # Left: QR Code & Verification URL
+    qr_url = f"https://verify.vivoiq.com/credential/{cred_id}"
+    qr = qrcode.QRCode(box_size=3, border=1)
+    qr.add_data(qr_url)
+    qr.make(fit=True)
+    qr_img = qr.make_image(fill_color="black", back_color="white")
+    qr_io = io.BytesIO()
+    qr_img.save(qr_io, format="PNG")
+    qr_io.seek(0)
+    
+    qr_reader = ImageReader(qr_io)
+    c.drawImage(qr_reader, margin + 30, bottom_y - 60, width=54, height=54)
+
+    c.setFont("Helvetica-Bold", 8)
+    c.setFillColor(colors.HexColor("#0f172a"))
+    c.drawString(margin + 92, bottom_y - 18, f"Credential ID: {cred_id}")
+    
+    c.setFont("Helvetica", 7.5)
+    c.setFillColor(colors.HexColor("#64748b"))
+    c.drawString(margin + 92, bottom_y - 30, f"Assessment Date: {issued_date}")
+    c.drawString(margin + 92, bottom_y - 42, "Validity / Policy: Annual Reassessment Recommended")
+    c.setFillColor(colors.HexColor("#2563eb"))
+    c.drawString(margin + 92, bottom_y - 54, qr_url)
+
+    # Center: Embossed Gold Seal
+    seal_cx = page_w / 2.0
+    seal_cy = bottom_y - 32
+    c.setFillColor(colors.HexColor("#fef3c7"))
+    c.setStrokeColor(colors.HexColor("#d97706"))
+    c.setLineWidth(2)
+    c.circle(seal_cx, seal_cy, 28, fill=1, stroke=1)
+    c.setStrokeColor(colors.HexColor("#b45309"))
+    c.setLineWidth(1)
+    c.circle(seal_cx, seal_cy, 24, fill=0, stroke=1)
+    c.setFont("Helvetica-Bold", 6.5)
+    c.setFillColor(colors.HexColor("#78350f"))
+    c.drawCentredString(seal_cx, seal_cy + 8, "VIVO-IQ")
+    c.setFont("Helvetica-Bold", 7.5)
+    c.drawCentredString(seal_cx, seal_cy - 2, "VERIFIED")
+    c.setFont("Helvetica", 6)
+    c.drawCentredString(seal_cx, seal_cy - 12, "REGISTRY SEAL")
+
+    # Right: Board of Assessors
+    right_align_x = page_w - margin - 30
+    c.setFont("Times-BoldItalic", 15)
+    c.setFillColor(colors.HexColor("#0f172a"))
+    c.drawRightString(right_align_x, bottom_y - 20, "VivoIQ Board of Assessors")
+    
+    c.setStrokeColor(colors.HexColor("#94a3b8"))
+    c.setLineWidth(0.8)
+    c.line(right_align_x - 180, bottom_y - 24, right_align_x, bottom_y - 24)
+
+    c.setFont("Helvetica-Bold", 7.5)
+    c.setFillColor(colors.HexColor("#64748b"))
+    c.drawRightString(right_align_x, bottom_y - 35, "Capability Verification Standard 1.0")
+    c.setFont("Helvetica", 7)
+    c.setFillColor(colors.HexColor("#059669"))
+    c.drawRightString(right_align_x, bottom_y - 47, "AI-Evaluated & Cryptographically Registered")
+
+    # Section 11 Legal Disclaimer Footnote
+    c.setFont("Helvetica", 6.8)
+    c.setFillColor(colors.HexColor("#94a3b8"))
+    disclaimer = "Section 11 Notice: This credential certifies verified capability demonstrated under the VivoIQ AI-Enabled Assessment Framework 1.0. This represents an AI-enabled self-evaluation and does not imply a proctored professional license."
+    c.drawCentredString(page_w / 2.0, margin + 14, disclaimer)
+
+    c.save()
+    buffer.seek(0)
+    return buffer.getvalue()
+
+
+@app.get("/assessment/certificate/pdf")
+async def download_certificate_pdf(resume_id: int, request: Request, session: AsyncSession = Depends(get_session)):
+    user_id_cookie = request.cookies.get("user_id")
+    if not user_id_cookie: return HTMLResponse("Unauthorized", status_code=401)
+    user_id = int(user_id_cookie)
+    
+    # Check Certificate via Stored Procedure
+    cert_res = await session.execute(text("CALL GetCertificateByResumeId(:r_id)"), {"r_id": resume_id})
+    cert_row = cert_res.mappings().first()
+    
+    # If not generated yet, generate and save it via Stored Procedure
+    if not cert_row:
+        score_res = await session.execute(text("CALL GetLatestAssessmentResult(:r_id)"), {"r_id": resume_id})
+        score_row = score_res.mappings().first()
+        if not score_row:
+            return HTMLResponse("Assessment result not found", status_code=404)
+        score = float(score_row["total_score"])
+        try:
+            ai7 = json.loads(score_row["breakdown_json"])
+            if isinstance(ai7, list): ai7 = {"overall_percentage": score, "domain_scores": {}, "passed": (score >= 70.0), "critical_failure": False}
+        except Exception:
+            ai7 = {"overall_percentage": score, "domain_scores": {}, "passed": (score >= 70.0), "critical_failure": False}
+        if not ai7.get("passed", score >= 70.0) or ai7.get("critical_failure", False) or score < 70.0:
+            return HTMLResponse("Candidate not eligible for certificate", status_code=403)
+            
+        user_res = await session.execute(text("CALL GetUserById(:u_id)"), {"u_id": user_id})
+        user_row = user_res.mappings().first()
+        candidate_name = user_row["name"].title() if (user_row and user_row.get("name")) else "Procurement Professional"
+        
+        prof_res = await session.execute(text("CALL GetCandidateProfileWithLevel(:r_id)"), {"r_id": resume_id})
+        prof_row = prof_res.mappings().first()
+        expected_level = prof_row.get("expected_level", 1) if prof_row else 1
+        levels_map = {1: "Foundation", 2: "Practitioner", 3: "Advanced", 4: "Expert", 5: "Leader"}
+        level_name = levels_map.get(expected_level, "Practitioner")
+        
+        import secrets
+        from datetime import datetime
+        cred_id = f"VIQ-{datetime.now().year}-L{expected_level}-{secrets.token_hex(3).upper()}"
+        
+        from ai_agents import run_certificate_narrative_agent
+        narrative_data = run_certificate_narrative_agent(candidate_name, ai7, expected_level, level_name)
+        
+        cert_title = "VivoIQ Procurement Capability — Self-Evaluation"
+        verified_level_str = f"Level {expected_level} — {level_name}"
+        has_distinction = 1 if (narrative_data.get("has_distinction") or score >= 90.0) else 0
+        narrative_summary = narrative_data.get("verified_capability_summary", "")
+        verified_domains = narrative_data.get("primary_verified_domains", [])
+        
+        metadata = {
+            "evaluation_standard": "VivoIQ AI-Enabled Capability Verification Framework 1.0",
+            "scope_of_practice": narrative_data.get("scope_of_practice", ""),
+            "distinction_title": narrative_data.get("distinction_title", "Conferred with High Distinction" if has_distinction else ""),
+            "candidate_name": candidate_name,
+            "overall_score": score,
+            "verification_url": f"https://verify.vivoiq.com/credential/{cred_id}"
+        }
+        
+        await session.execute(
+            text("CALL SaveCertificate(:u_id, :r_id, :cred_id, :title, :level, :score, :distinction, :narrative, :domains_json, :meta_json)"),
+            {
+                "u_id": user_id,
+                "r_id": resume_id,
+                "cred_id": cred_id,
+                "title": cert_title,
+                "level": verified_level_str,
+                "score": score,
+                "distinction": has_distinction,
+                "narrative": narrative_summary,
+                "domains_json": json.dumps(verified_domains),
+                "meta_json": json.dumps(metadata)
+            }
+        )
+        await session.commit()
+        cert_res = await session.execute(text("CALL GetCertificateByResumeId(:r_id)"), {"r_id": resume_id})
+        cert_row = cert_res.mappings().first()
+
+    # Parse stored record
+    cert_title = "VivoIQ Procurement Capability — Self-Evaluation"
+    verified_level_str = cert_row["verified_level"]
+    score = float(cert_row["overall_score"])
+    has_distinction = bool(cert_row["has_distinction"])
+    narrative_summary = cert_row["narrative_summary"]
+    cred_id = cert_row["credential_id"]
+    issued_date = cert_row["issued_at"].strftime("%B %d, %Y") if hasattr(cert_row["issued_at"], "strftime") else str(cert_row["issued_at"])
+    
+    try:
+        verified_domains = json.loads(cert_row["verified_domains_json"])
+    except Exception:
+        verified_domains = []
+        
+    try:
+        metadata = json.loads(cert_row["metadata_json"])
+    except Exception:
+        metadata = {}
+        
+    candidate_name = metadata.get("candidate_name", "Procurement Professional").title()
+    scope_of_practice = metadata.get("scope_of_practice", "")
+    distinction_title = metadata.get("distinction_title", "Conferred with High Distinction" if has_distinction else "")
+    
+    pdf_bytes = build_certificate_pdf(
+        candidate_name=candidate_name,
+        cred_id=cred_id,
+        verified_level=verified_level_str,
+        cert_title=cert_title,
+        score=score,
+        issued_date=issued_date,
+        narrative_summary=narrative_summary,
+        verified_domains=verified_domains,
+        scope_of_practice=scope_of_practice,
+        has_distinction=has_distinction,
+        distinction_title=distinction_title
+    )
+    
+    safe_name = candidate_name.replace(" ", "_").replace("'", "")
+    return Response(
+        content=pdf_bytes,
+        media_type="application/pdf",
+        headers={
+            "Content-Disposition": f'attachment; filename="VivoIQ_Certificate_{safe_name}_{cred_id}.pdf"'
+        }
+    )
+
+
+@app.get("/assessment/certificate", response_class=HTMLResponse)
+async def view_certificate(resume_id: int, request: Request, session: AsyncSession = Depends(get_session)):
+    user_id_cookie = request.cookies.get("user_id")
+    if not user_id_cookie: return HTMLResponse("Unauthorized", status_code=401)
+    user_id = int(user_id_cookie)
+    
+    # 1. Check if Certificate is already generated in DB via Stored Procedure
+    cert_res = await session.execute(text("CALL GetCertificateByResumeId(:r_id)"), {"r_id": resume_id})
+    cert_row = cert_res.mappings().first()
+    
+    if not cert_row:
+        # 2. Check Assessment Results via Stored Procedure
+        score_res = await session.execute(text("CALL GetLatestAssessmentResult(:r_id)"), {"r_id": resume_id})
+        score_row = score_res.mappings().first()
+        if not score_row:
+            return HTMLResponse("Assessment result not found", status_code=404)
+            
+        score = float(score_row["total_score"])
+        try:
+            ai7_results = json.loads(score_row["breakdown_json"])
+            if isinstance(ai7_results, list):
+                ai7_results = {"overall_percentage": score, "domain_scores": {}, "passed": (score >= 70.0), "critical_failure": False}
+        except Exception:
+            ai7_results = {"overall_percentage": score, "domain_scores": {}, "passed": (score >= 70.0), "critical_failure": False}
+            
+        passed = ai7_results.get("passed", score >= 70.0)
+        critical = ai7_results.get("critical_failure", False)
+        
+        # Section 9 Rule: 70% overall, no critical domain < 50%
+        if not passed or critical or score < 70.0:
+            return HTMLResponse(f"""
+            <div class="min-h-[70vh] flex items-center justify-center p-4">
+                <div class="max-w-md w-full bg-white rounded-2xl shadow-sm border border-amber-200 p-8 text-center">
+                    <div class="w-14 h-14 rounded-full bg-amber-50 text-amber-500 border border-amber-200 flex items-center justify-center mx-auto mb-5 shadow-sm">
+                        <svg class="w-7 h-7" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"></path></svg>
+                    </div>
+                    <h3 class="text-xl font-extrabold text-slate-800 mb-2">Certificate Requirement Not Met</h3>
+                    <p class="text-sm text-slate-500 mb-6 leading-relaxed">VivoIQ credentials require an overall score of at least <strong>70%</strong> with no critical domain below 50%. Your verified score was <strong>{score:.1f}%</strong>.</p>
+                    <a href="/assessment/results?resume_id={resume_id}" class="inline-flex items-center justify-center px-6 py-3 bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold uppercase tracking-wider rounded-xl transition-colors shadow-sm">Return to Capability Dashboard</a>
+                </div>
+            </div>
+            """, status_code=403)
+            
+        # 3. Retrieve Candidate & Profile via Stored Procedures
+        user_res = await session.execute(text("CALL GetUserById(:u_id)"), {"u_id": user_id})
+        user_row = user_res.mappings().first()
+        candidate_name = user_row["name"].title() if (user_row and user_row.get("name")) else "Procurement Professional"
+        
+        prof_res = await session.execute(text("CALL GetCandidateProfileWithLevel(:r_id)"), {"r_id": resume_id})
+        prof_row = prof_res.mappings().first()
+        expected_level = prof_row.get("expected_level", 1) if prof_row else 1
+        levels_map = {1: "Foundation", 2: "Practitioner", 3: "Advanced", 4: "Expert", 5: "Leader"}
+        level_name = levels_map.get(expected_level, "Practitioner")
+        
+        # 4. Generate Credential ID
+        import secrets
+        from datetime import datetime
+        cred_id = f"VIQ-{datetime.now().year}-L{expected_level}-{secrets.token_hex(3).upper()}"
+        
+        # 5. Invoke AI-9 (Certificate Narrative Agent)
+        from ai_agents import run_certificate_narrative_agent
+        narrative_data = run_certificate_narrative_agent(candidate_name, ai7_results, expected_level, level_name)
+        
+        cert_title = "VivoIQ Procurement Capability — Self-Evaluation"
+        verified_level_str = f"Level {expected_level} — {level_name}"
+        has_distinction = 1 if (narrative_data.get("has_distinction") or score >= 90.0) else 0
+        narrative_summary = narrative_data.get("verified_capability_summary", "")
+        verified_domains = narrative_data.get("primary_verified_domains", [])
+        
+        metadata = {
+            "evaluation_standard": "VivoIQ AI-Enabled Capability Verification Framework 1.0",
+            "scope_of_practice": narrative_data.get("scope_of_practice", ""),
+            "distinction_title": narrative_data.get("distinction_title", "Conferred with High Distinction" if has_distinction else ""),
+            "candidate_name": candidate_name,
+            "overall_score": score,
+            "verification_url": f"https://verify.vivoiq.com/credential/{cred_id}"
+        }
+        
+        # 6. Save Certificate to Database via Stored Procedure
+        await session.execute(
+            text("CALL SaveCertificate(:u_id, :r_id, :cred_id, :title, :level, :score, :distinction, :narrative, :domains_json, :meta_json)"),
+            {
+                "u_id": user_id,
+                "r_id": resume_id,
+                "cred_id": cred_id,
+                "title": cert_title,
+                "level": verified_level_str,
+                "score": score,
+                "distinction": has_distinction,
+                "narrative": narrative_summary,
+                "domains_json": json.dumps(verified_domains),
+                "meta_json": json.dumps(metadata)
+            }
+        )
+        await session.commit()
+        
+        # Reload via Stored Procedure
+        cert_res = await session.execute(text("CALL GetCertificateByResumeId(:r_id)"), {"r_id": resume_id})
+        cert_row = cert_res.mappings().first()
+
+    # Parse stored record
+    cert_title = "VivoIQ Procurement Capability — Self-Evaluation"
+    verified_level_str = cert_row["verified_level"]
+    score = float(cert_row["overall_score"])
+    has_distinction = bool(cert_row["has_distinction"])
+    narrative_summary = cert_row["narrative_summary"]
+    cred_id = cert_row["credential_id"]
+    issued_date = cert_row["issued_at"].strftime("%B %d, %Y") if hasattr(cert_row["issued_at"], "strftime") else str(cert_row["issued_at"])
+    
+    try:
+        verified_domains = json.loads(cert_row["verified_domains_json"])
+    except Exception:
+        verified_domains = []
+        
+    try:
+        metadata = json.loads(cert_row["metadata_json"])
+    except Exception:
+        metadata = {}
+        
+    candidate_name = metadata.get("candidate_name", "Procurement Professional").title()
+    scope_of_practice = metadata.get("scope_of_practice", "")
+    distinction_title = metadata.get("distinction_title", "Conferred with High Distinction" if has_distinction else "")
+    
+    # Generate QR Code as data URI for web preview
+    qr = qrcode.QRCode(box_size=3, border=1)
+    qr_url = f"https://verify.vivoiq.com/credential/{cred_id}"
+    qr.add_data(qr_url)
+    qr.make(fit=True)
+    qr_img = qr.make_image(fill_color="black", back_color="white")
+    qr_buf = io.BytesIO()
+    qr_img.save(qr_buf, format="PNG")
+    qr_img_src = f"data:image/png;base64,{base64.b64encode(qr_buf.getvalue()).decode('utf-8')}"
+
+    # Mastered Domains Badges HTML
+    domains_badges_html = "".join([
+        f'<span class="inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-[11px] font-bold bg-emerald-50 text-emerald-800 border border-emerald-200/80"><svg class="w-3 h-3 text-emerald-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M5 13l4 4L19 7"></path></svg>{d}</span>'
+        for d in verified_domains
+    ])
+    
+    distinction_ribbon_html = f'''
+    <div class="inline-flex items-center gap-1.5 px-3.5 py-1 rounded-full bg-gradient-to-r from-amber-400/20 via-yellow-500/20 to-amber-400/20 border border-amber-300 text-amber-900 font-extrabold text-[11px] tracking-wider uppercase mb-2 shadow-sm">
+        <svg class="w-3.5 h-3.5 text-amber-600" fill="currentColor" viewBox="0 0 20 20"><path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z"></path></svg>
+        {distinction_title if distinction_title else "Conferred with High Distinction"} • Top Tier Performance ({score:.1f}%)
+    </div>
+    ''' if has_distinction else ""
+
+    safe_candidate_filename = candidate_name.replace(" ", "_").replace("'", "")
+    certificate_html = f"""<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>VivoIQ Credential — {candidate_name}</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@600;700;900&family=Playfair+Display:ital,wght@0,600;0,700;0,800;1,400&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <style>
+        @page {{
+            size: A4 landscape;
+            margin: 0;
+        }}
+        @media print {{
+            body {{
+                background: white !important;
+                padding: 0 !important;
+                margin: 0 !important;
+                -webkit-print-color-adjust: exact !important;
+                print-color-adjust: exact !important;
+            }}
+            .no-print {{
+                display: none !important;
+            }}
+            .cert-viewport {{
+                padding: 0 !important;
+                margin: 0 !important;
+                display: block !important;
+                transform: none !important;
+                height: 100vh !important;
+                width: 100vw !important;
+            }}
+            #cert-scaler {{
+                transform: none !important;
+                margin: 0 !important;
+            }}
+            #certificate-canvas {{
+                box-shadow: none !important;
+                border-width: 6px !important;
+                width: 100% !important;
+                height: 100% !important;
+                border-radius: 0 !important;
+                margin: 0 !important;
+            }}
+        }}
+        .font-cinzel {{ font-family: 'Cinzel', serif; }}
+        .font-serif-display {{ font-family: 'Playfair Display', serif; }}
+        .font-sans-modern {{ font-family: 'Plus Jakarta Sans', sans-serif; }}
+    </style>
+</head>
+<body class="bg-slate-950 text-slate-100 font-sans-modern antialiased min-h-screen flex flex-col overflow-x-hidden selection:bg-blue-600 selection:text-white">
+
+    <!-- Top Action Toolbar (Hidden on Print) -->
+    <header class="no-print fixed top-0 left-0 right-0 h-14 bg-slate-900/95 backdrop-blur border-b border-slate-800 z-50 px-4 sm:px-6 flex items-center justify-between shadow-lg">
+        <div class="flex items-center gap-3">
+            <a href="/assessment/results?resume_id={resume_id}" class="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-semibold transition-colors border border-slate-700 shadow-sm cursor-pointer">
+                <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 19l-7-7m0 0l7-7m-7 7h18"></path></svg>
+                <span>Dashboard</span>
+            </a>
+            <div class="h-4 w-[1px] bg-slate-800 hidden sm:block"></div>
+            <div class="hidden sm:flex items-center gap-2 text-xs">
+                <span class="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
+                <span class="font-mono text-slate-400 font-medium">{cred_id}</span>
+            </div>
+        </div>
+
+        <div class="flex items-center gap-2 sm:gap-3">
+            <!-- Toggle Fit / Actual -->
+            <button onclick="toggleFit()" id="fit-btn" class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-medium border border-slate-700 transition-colors cursor-pointer">
+                <svg class="w-3.5 h-3.5 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4"></path></svg>
+                <span id="fit-btn-label">100% Size</span>
+            </button>
+
+            <!-- Download Official PDF (Direct Vector Download from Server) -->
+            <a href="/assessment/certificate/pdf?resume_id={resume_id}" download="VivoIQ_Certificate_{safe_candidate_filename}_{cred_id}.pdf" class="inline-flex items-center gap-2 px-4 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-500 text-white text-xs font-bold shadow-md shadow-blue-500/20 transition-all cursor-pointer">
+                <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path></svg>
+                <span>Download PDF (Official A4)</span>
+            </a>
+
+            <!-- Print -->
+            <button onclick="window.print()" class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-medium border border-slate-700 transition-colors cursor-pointer">
+                <svg class="w-3.5 h-3.5 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z"></path></svg>
+                <span class="hidden sm:inline">Print</span>
+            </button>
+        </div>
+    </header>
+
+    <!-- Certificate Viewport Area -->
+    <main class="cert-viewport flex-grow pt-20 pb-10 px-4 flex items-center justify-center overflow-auto">
+        <div id="cert-scaler" class="transition-transform duration-200 ease-out origin-top sm:origin-center">
+            
+            <!-- MASTER CERTIFICATE CANVAS (1060px x 748px standard A4 Landscape) -->
+            <div id="certificate-canvas" class="w-[1060px] h-[748px] min-w-[1060px] min-h-[748px] max-h-[748px] bg-white text-slate-900 border-[10px] border-double border-slate-900 rounded-[28px] p-9 shadow-2xl relative overflow-hidden flex flex-col justify-between select-none">
+                
+                <!-- Ornate Gold Corner Ornaments -->
+                <div class="absolute top-3 left-3 w-12 h-12 border-t-[3px] border-l-[3px] border-amber-500/80 pointer-events-none"></div>
+                <div class="absolute top-3 right-3 w-12 h-12 border-t-[3px] border-r-[3px] border-amber-500/80 pointer-events-none"></div>
+                <div class="absolute bottom-3 left-3 w-12 h-12 border-b-[3px] border-l-[3px] border-amber-500/80 pointer-events-none"></div>
+                <div class="absolute bottom-3 right-3 w-12 h-12 border-b-[3px] border-r-[3px] border-amber-500/80 pointer-events-none"></div>
+
+                <!-- Inner Gold Line Border -->
+                <div class="border border-amber-400/50 rounded-[18px] p-7 h-full flex flex-col justify-between relative bg-gradient-to-b from-amber-50/20 via-white to-slate-50/20">
+                    
+                    <!-- Top Branding & Title -->
+                    <div class="text-center">
+                        <div class="flex items-center justify-center gap-2 mb-1">
+                            <span class="font-cinzel text-3xl font-black tracking-[0.25em] text-slate-950">V I V O <span class="text-blue-600">I Q</span></span>
+                        </div>
+                        <p class="text-[9px] uppercase font-bold tracking-[0.35em] text-slate-400 mb-2">Global Procurement Capability Verification Registry</p>
+                        
+                        <div class="inline-flex items-center gap-2 px-3 py-0.5 rounded-full bg-blue-50 border border-blue-200/80 text-blue-700 text-[9.5px] font-extrabold uppercase tracking-widest mb-1.5">
+                            Official Evaluation Credential • Section 11 Verified
+                        </div>
+                        <h2 class="font-cinzel text-2xl font-bold tracking-tight text-slate-900">{cert_title}</h2>
+                        {distinction_ribbon_html}
+                    </div>
+
+                    <!-- Candidate Conferred Centerpiece -->
+                    <div class="text-center my-1.5">
+                        <p class="text-[12px] text-slate-500 font-medium italic mb-1">This certifies that</p>
+                        <h1 class="font-serif-display text-4xl font-extrabold text-slate-950 tracking-tight capitalize underline decoration-amber-400/80 decoration-2 underline-offset-8 mb-2.5">
+                            {candidate_name}
+                        </h1>
+                        <p class="text-[12px] text-slate-600 max-w-xl mx-auto leading-relaxed">
+                            has demonstrated verified professional capability through the VivoIQ AI-Enabled Adaptive Assessment.
+                        </p>
+                        <div class="inline-flex items-center gap-2 text-xs font-bold text-blue-900 uppercase tracking-wider mt-1.5">
+                            <span>Verified Competency Tier: {verified_level_str}</span>
+                            <span>•</span>
+                            <span class="text-emerald-700">Evaluation Score: {score:.1f}%</span>
+                        </div>
+                    </div>
+
+                    <!-- Mid Section: Narrative & Competency Domains -->
+                    <div class="grid grid-cols-12 gap-5 items-stretch my-1.5">
+                        <!-- AI-9 Narrative Quote -->
+                        <div class="col-span-7 bg-slate-50/90 border border-slate-200/80 rounded-xl p-4 flex flex-col justify-center text-left shadow-sm">
+                            <div class="flex items-center gap-1.5 text-blue-600 text-[10px] font-extrabold uppercase tracking-wider mb-1.5">
+                                <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z"></path></svg>
+                                <span>Verified Capability Narrative</span>
+                            </div>
+                            <p class="text-[11.5px] text-slate-700 leading-relaxed italic font-normal line-clamp-4">
+                                "{narrative_summary}"
+                            </p>
+                        </div>
+
+                        <!-- Domains & Scope -->
+                        <div class="col-span-5 bg-slate-50/90 border border-slate-200/80 rounded-xl p-4 flex flex-col justify-between text-left shadow-sm">
+                            <div>
+                                <span class="text-[9px] font-bold text-slate-400 uppercase tracking-wider block mb-1.5">Primary Verified Competency Domains</span>
+                                <div class="flex flex-wrap gap-1.5">
+                                    {domains_badges_html}
+                                </div>
+                            </div>
+                            {f'''<div class="mt-2 pt-2 border-t border-slate-200/60">
+                                <span class="text-[9px] font-bold text-slate-400 uppercase tracking-wider block">Operational Scope:</span>
+                                <p class="text-[10px] text-slate-600 leading-snug line-clamp-2">{scope_of_practice}</p>
+                            </div>''' if scope_of_practice else ''}
+                        </div>
+                    </div>
+
+                    <!-- Bottom Signatures & Seal (Section 11) -->
+                    <div class="pt-3 mt-1 border-t border-slate-200/90 grid grid-cols-12 items-center text-left">
+                        <!-- Left: QR Code + Credential Metadata -->
+                        <div class="col-span-5 flex items-center gap-3">
+                            <img src="{qr_img_src}" alt="QR Verification" class="w-14 h-14 border border-slate-200 rounded-lg p-0.5 bg-white shadow-sm flex-shrink-0" />
+                            <div class="space-y-0.5">
+                                <span class="text-[9px] font-bold text-slate-400 uppercase tracking-wider block">Credential ID: <span class="font-mono text-slate-900 font-bold">{cred_id}</span></span>
+                                <span class="text-[9.5px] text-slate-600 block">Assessment Date: {issued_date}</span>
+                                <span class="text-[9px] text-amber-800 font-medium block">Validity: Annual Reassessment Recommended</span>
+                                <span class="text-[8.5px] text-blue-600 font-mono block truncate">{qr_url}</span>
+                            </div>
+                        </div>
+
+                        <!-- Center: 3D Gold Seal -->
+                        <div class="col-span-3 flex flex-col items-center justify-center">
+                            <div class="relative w-15 h-15 rounded-full bg-gradient-to-br from-amber-300 via-yellow-400 to-amber-600 p-[3px] shadow-lg shadow-amber-300/40 flex items-center justify-center">
+                                <div class="w-full h-full rounded-full border-2 border-dashed border-amber-900/30 flex flex-col items-center justify-center text-amber-950 font-black text-[7.5px] uppercase tracking-tighter text-center leading-tight bg-gradient-to-tr from-amber-200 to-yellow-100 p-2">
+                                    <svg class="w-4 h-4 text-amber-900 mb-0.5" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M6.267 3.455a3.066 3.066 0 001.745-.723 3.066 3.066 0 013.976 0 3.066 3.066 0 001.745.723 3.066 3.066 0 012.812 2.812c.051.643.304 1.254.723 1.745a3.066 3.066 0 010 3.976 3.066 3.066 0 00-.723 1.745 3.066 3.066 0 01-2.812 2.812 3.066 3.066 0 00-1.745.723 3.066 3.066 0 01-3.976 0 3.066 3.066 0 00-1.745-.723 3.066 3.066 0 01-2.812-2.812 3.066 3.066 0 00-.723-1.745 3.066 3.066 0 010-3.976 3.066 3.066 0 00.723-1.745 3.066 3.066 0 012.812-2.812zm7.44 5.252a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd"></path></svg>
+                                    <span>VERIFIED</span>
+                                    <span>REGISTRY SEAL</span>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Right: Board of Assessors -->
+                        <div class="col-span-4 text-right space-y-0.5">
+                            <div class="font-serif-display italic text-base text-slate-900 font-bold border-b border-slate-300 pb-0.5 inline-block">
+                                VivoIQ Board of Assessors
+                            </div>
+                            <span class="text-[9px] font-bold text-slate-400 uppercase tracking-wider block">Capability Verification Standard 1.0</span>
+                            <span class="text-[9px] text-emerald-700 font-semibold block">AI-Evaluated & Cryptographically Registered</span>
+                        </div>
+                    </div>
+
+                    <!-- Bottom Disclaimer Footnote (Section 11 Notice) -->
+                    <p class="text-[8px] text-slate-400 text-center tracking-tight mt-1">
+                        Section 11 Notice: This credential certifies verified capability demonstrated under the VivoIQ AI-Enabled Assessment Framework 1.0. This represents an AI-enabled self-evaluation and does not imply a proctored professional license.
+                    </p>
+                </div>
+            </div>
+            
+        </div>
+    </main>
+
+    <!-- Interactive Scripts: Auto-Fit -->
+    <script>
+        let isFit = true;
+
+        function autoScale() {{
+            const scaler = document.getElementById('cert-scaler');
+            if (!scaler) return;
+            
+            if (!isFit) {{
+                scaler.style.transform = 'scale(1)';
+                scaler.parentElement.style.height = 'auto';
+                document.getElementById('fit-btn-label').innerText = 'Fit to Screen';
+                return;
+            }}
+            
+            const availW = window.innerWidth - 32;
+            const availH = window.innerHeight - 90;
+            const scaleW = availW / 1060;
+            const scaleH = availH / 748;
+            const scale = Math.min(scaleW, scaleH, 1.0);
+            
+            scaler.style.transform = `scale(${{scale}})`;
+            scaler.style.transformOrigin = 'center top';
+            scaler.parentElement.style.height = `${{Math.round(748 * scale + 40)}}px`;
+            document.getElementById('fit-btn-label').innerText = '100% Size';
+        }}
+
+        function toggleFit() {{
+            isFit = !isFit;
+            autoScale();
+        }}
+
+        window.addEventListener('resize', autoScale);
+        window.addEventListener('DOMContentLoaded', autoScale);
+        setTimeout(autoScale, 150);
+    </script>
+</body>
+</html>"""
+    return HTMLResponse(content=certificate_html)
+
 
 if __name__ == "__main__":
     import uvicorn

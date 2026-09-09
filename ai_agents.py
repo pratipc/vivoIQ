@@ -377,6 +377,7 @@ def run_learning_recommendation_agent(assessment_results: dict, expected_level: 
     1. Prioritize gaps that materially affect the candidate's current or target capability level.
     2. Do not recommend training in areas already strongly demonstrated unless it is an optional advanced pathway.
     3. For each recommendation state: gap, evidence, priority, recommended VivoIQ learning asset, expected outcome and suggested reassessment point.
+    Make the "evidence" field user-friendly, constructive, and easy for the candidate to digest in seconds (focus on the specific business concepts missed, without harsh question numbers like (Q3) or academic jargon).
     4. Distinguish mandatory development from optional enrichment.
     5. Keep the learning pathway focused and achievable (maximum 4 recommendations).
     
@@ -387,7 +388,7 @@ def run_learning_recommendation_agent(assessment_results: dict, expected_level: 
             {{
                 "domain": "string (from ontology)",
                 "gap": "string",
-                "evidence": "string (brief context from assessment)",
+                "evidence": "string (constructive, executive-friendly summary of what was demonstrated or missed, e.g. 'Challenges with bottom-up should-cost calculations and separating P&L savings from cost avoidance')",
                 "priority": "High | Medium | Low",
                 "type": "mandatory | optional",
                 "recommended_asset": "string (e.g. Cost modelling micro-course, Advanced sourcing strategy workshop)",
@@ -417,3 +418,82 @@ def run_learning_recommendation_agent(assessment_results: dict, expected_level: 
     except Exception as e:
         print(f"Error parsing AI-8 JSON: {e}")
         return {"learning_pathway": []}
+
+
+def run_certificate_narrative_agent(candidate_name: str, assessment_results: dict, expected_level: int, level_name: str) -> dict:
+    """
+    AI-9: Certificate Narrative Agent (Section 9 & Section 11)
+    Generates formal certificate descriptors, verified capability summary, and credential metadata.
+    """
+    model = genai.GenerativeModel("gemini-3.5-flash")
+    
+    score = assessment_results.get("overall_percentage", 0)
+    has_distinction = score >= 90.0
+    domain_scores = assessment_results.get("domain_scores", {})
+    
+    # Identify mastered domains (>= 70%)
+    mastered_domains = [d for d, val in domain_scores.items() if val.get("percentage", 0) >= 70]
+    if not mastered_domains:
+        sorted_d = sorted(domain_scores.items(), key=lambda x: x[1].get("percentage", 0), reverse=True)
+        mastered_domains = [d[0] for d in sorted_d[:3]]
+        
+    prompt = f"""
+    SYSTEM ROLE:
+    You are the VivoIQ Executive Credential Registrar and Capability Narrative Agent.
+    Your task is to craft an authoritative, rigorous, and professional executive certificate narrative for a verified procurement professional.
+    
+    STANDARDS:
+    VivoIQ AI-Enabled Capability Verification Framework 1.0 (Section 9 & Section 11).
+    
+    INPUT DATA:
+    - Candidate Name: {candidate_name}
+    - Verified Capability Level: Level {expected_level} – {level_name}
+    - Overall Assessment Score: {score}%
+    - Performance Band: {"Distinguished Performance (Honors)" if has_distinction else "Verified Competence"}
+    - Mastered Domains: {json.dumps(mastered_domains)}
+    - Full AI-7 Results Breakdown: {json.dumps(assessment_results, indent=2)}
+    
+    OBJECTIVE:
+    Generate the formal certificate narrative components.
+    
+    RULES:
+    1. The 'certificate_title' must be formal and executive (e.g. 'VivoIQ Certified Procurement Practitioner — Level 2').
+    2. The 'verified_capability_summary' must be a polished 2-3 sentence executive summary of the verified professional capabilities demonstrated during the rigorous adaptive assessment. Highlight strategic thinking, commercial rigor, and technical domain proficiency.
+    3. The 'primary_verified_domains' should list the 3-5 key procurement competency domains that the candidate successfully verified.
+    4. If the candidate scored >= 90%, set 'has_distinction' to true and provide an inspiring 'distinction_title' (e.g. 'Conferred with High Distinction'). Otherwise, false and empty string.
+    5. Provide a 'scope_of_practice' describing what organizational procurement decisions someone at this verified level is equipped to lead.
+    
+    OUTPUT FORMAT:
+    Return ONLY a valid JSON object without markdown formatting matching this schema:
+    {{
+        "certificate_title": "string",
+        "verified_level_name": "string",
+        "verified_capability_summary": "string (2-3 sentences)",
+        "primary_verified_domains": ["string", "string"],
+        "has_distinction": true,
+        "distinction_title": "string or empty",
+        "scope_of_practice": "string"
+    }}
+    """
+    
+    try:
+        response = model.generate_content(prompt)
+        json_str = response.text.strip()
+        if json_str.startswith("```json"):
+            json_str = json_str[7:]
+        if json_str.endswith("```"):
+            json_str = json_str[:-3]
+        return json.loads(json_str)
+    except Exception as e:
+        print(f"Error in AI-9 Certificate Narrative Agent: {e}")
+        # Deterministic fallback
+        return {
+            "certificate_title": f"VivoIQ Certified Procurement Professional — Level {expected_level} ({level_name})",
+            "verified_level_name": f"Level {expected_level} – {level_name}",
+            "verified_capability_summary": f"{candidate_name} has successfully demonstrated verified proficiency across core procurement disciplines under the VivoIQ Adaptive Assessment Framework, exhibiting strong commercial understanding and applied problem-solving.",
+            "primary_verified_domains": mastered_domains if mastered_domains else ["Strategic Sourcing", "Procurement Fundamentals"],
+            "has_distinction": has_distinction,
+            "distinction_title": "Conferred with High Distinction" if has_distinction else "",
+            "scope_of_practice": f"Qualified to independently execute and deliver strategic procurement initiatives aligned with Level {expected_level} standards."
+        }
+
