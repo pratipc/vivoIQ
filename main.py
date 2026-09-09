@@ -1,7 +1,7 @@
 import os
 import httpx
 from fastapi import FastAPI, Request, HTTPException
-from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi.responses import HTMLResponse, RedirectResponse, Response
 from fastapi.templating import Jinja2Templates
 from dotenv import load_dotenv
 
@@ -48,11 +48,10 @@ async def proxy_request(request: Request, service_url: str, path: str):
                     response = await client.post(url, content=body, headers=headers, cookies=request.cookies)
             else:
                  raise HTTPException(status_code=405, detail="Method not allowed by gateway")
-            
-            proxy_response = HTMLResponse(content=response.content, status_code=response.status_code)
-            # Forward headers back to the browser (crucial for Set-Cookie!)
+            proxy_response = Response(content=response.content, status_code=response.status_code, media_type=response.headers.get("content-type"))
+            # Forward headers back to the browser (crucial for Set-Cookie and Content-Disposition!)
             for k, v in response.headers.multi_items():
-                if k.lower() not in ("content-length", "content-encoding", "transfer-encoding", "connection", "server", "date"):
+                if k.lower() not in ("content-length", "content-encoding", "transfer-encoding", "connection", "server", "date", "content-type"):
                     proxy_response.headers.append(k, v)
                     
             return proxy_response
@@ -70,7 +69,7 @@ async def htmx_middleware(request: Request, call_next):
     
     response = await call_next(request)
     
-    if not hx_request and request.method == "GET" and response.status_code == 200 and not request.url.path.startswith(("/api", "/docs", "/openapi.json", "/favicon.ico")):
+    if not hx_request and request.method == "GET" and response.status_code == 200 and not request.url.path.startswith(("/api", "/docs", "/openapi.json", "/favicon.ico", "/assessment/certificate")):
         # Read the inner HTML body
         body_chunks = []
         async for chunk in response.body_iterator:
