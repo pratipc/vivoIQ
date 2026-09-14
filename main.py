@@ -69,7 +69,7 @@ async def htmx_middleware(request: Request, call_next):
     
     response = await call_next(request)
     
-    if not hx_request and request.method == "GET" and response.status_code == 200 and not request.url.path.startswith(("/api", "/docs", "/openapi.json", "/favicon.ico", "/assessment/certificate")):
+    if not hx_request and request.method == "GET" and response.status_code == 200 and not request.url.path.startswith(("/api", "/docs", "/openapi.json", "/favicon.ico", "/assessment/certificate", "/assessment/learning-plan")):
         # Read the inner HTML body
         body_chunks = []
         async for chunk in response.body_iterator:
