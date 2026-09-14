@@ -1,5 +1,5 @@
 from fastapi import FastAPI, Request, UploadFile, File, Form, Depends
-from fastapi.responses import HTMLResponse, Response
+from fastapi.responses import HTMLResponse, Response, JSONResponse
 from fastapi.templating import Jinja2Templates
 from dotenv import load_dotenv
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -698,7 +698,7 @@ async def build_profile(resume_id: int, request: Request, session: AsyncSession 
                     
                     <div class="mt-4 pt-4 border-t border-gray-100 flex flex-col items-center">
                         <div id="test-gen-container" class="w-full">
-                            <button id="btn-generate" disabled hx-get="/assessment/generate-test?resume_id={resume_id}" hx-target="#main-content" onclick="document.getElementById('test-gen-container').classList.add('hidden'); document.getElementById('test-gen-loading').classList.remove('hidden');" class="w-full h-11 bg-vivo-brand hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed text-white text-[14px] font-bold rounded-[8px] shadow-md hover:shadow-lg transition-all flex items-center justify-center gap-2">
+                            <button id="btn-generate" disabled hx-get="/assessment/generate-test?resume_id={resume_id}" hx-target="#test-gen-loading" hx-swap="outerHTML" onclick="document.getElementById('test-gen-container').classList.add('hidden'); document.getElementById('test-gen-loading').classList.remove('hidden');" class="w-full h-11 bg-vivo-brand hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed text-white text-[14px] font-bold rounded-[8px] shadow-md hover:shadow-lg transition-all flex items-center justify-center gap-2">
                                 <span>I'm Ready — Generate My Assessment</span>
                             </button>
                         </div>
@@ -911,6 +911,75 @@ async def generate_test(resume_id: int, request: Request, session: AsyncSession 
         import traceback
         error_msg = traceback.format_exc()
         return HTMLResponse(f"<div class='alert alert-error'><pre>{error_msg}</pre></div>", status_code=500)
+
+@app.post("/assessment/progression/{action}")
+async def progression_handler(action: str, request: Request, session: AsyncSession = Depends(get_session)):
+    user_id_cookie = request.cookies.get("user_id")
+    if not user_id_cookie:
+        return RedirectResponse(url="/", status_code=303)
+
+    try:
+        r_result = await session.execute(text("CALL GetLatestResumeId(:u_id)"), {"u_id": user_id_cookie})
+        resume_row = r_result.mappings().first()
+        if not resume_row:
+            return JSONResponse({"error": "No resume found"}, status_code=400)
+        old_resume_id = resume_row["id"]
+
+        prof_res = await session.execute(text("CALL GetCandidateProfileWithLevel(:r_id)"), {"r_id": old_resume_id})
+        prof_row = prof_res.mappings().first()
+        if not prof_row:
+            return JSONResponse({"error": "No profile found"}, status_code=400)
+        old_prof_json = json.loads(prof_row["profile_json"])
+        expected_level = prof_row["expected_level"]
+
+        score_res = await session.execute(text("CALL GetLatestAssessmentResult(:r_id)"), {"r_id": old_resume_id})
+        score_row = score_res.mappings().first()
+        prev_results = None
+        if score_row:
+            prev_results = json.loads(score_row["breakdown_json"])
+
+        if action == "next_level":
+            new_expected_level = min(expected_level + 1, 5)
+        else:
+            new_expected_level = expected_level
+
+        clone_res = await session.execute(text("CALL CloneResumeForProgression(:r_id)"), {"r_id": old_resume_id})
+        new_resume_id = clone_res.mappings().first()["new_id"]
+
+        await session.execute(text("CALL SaveCandidateProfile(:u_id, :r_id, :prof, :lvl)"), {
+            "u_id": user_id_cookie,
+            "r_id": new_resume_id,
+            "prof": json.dumps(old_prof_json),
+            "lvl": new_expected_level
+        })
+
+        from ai_agents import run_assessment_blueprint_agent
+        new_blueprint = run_assessment_blueprint_agent(
+            capability_profile=old_prof_json,
+            previous_results=prev_results,
+            progression_type=action
+        )
+
+        await session.execute(text("CALL SaveAssessmentBlueprint(:u_id, :r_id, :bp)"), {
+            "u_id": user_id_cookie,
+            "r_id": new_resume_id,
+            "bp": json.dumps(new_blueprint)
+        })
+
+        await session.execute(text("CALL UpdateUserStage(:u_id, :stage)"), {
+            "u_id": user_id_cookie,
+            "stage": "Test"
+        })
+
+        await session.commit()
+
+        res = HTMLResponse("")
+        res.headers["HX-Redirect"] = f"/assessment/build-profile?resume_id={new_resume_id}"
+        return res
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return JSONResponse({"error": str(e)}, status_code=500)
 
 @app.get("/assessment/test-questions", response_class=HTMLResponse)
 async def test_questions(request: Request, resume_id: int, q_idx: int = 0, session: AsyncSession = Depends(get_session)):
@@ -1492,7 +1561,7 @@ async def view_results(request: Request, resume_id: int, session: AsyncSession =
                     <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z"></path></svg>
                     Claim & View Certificate
                 </a>
-                <button class="w-full px-5 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold text-[13px] rounded-[10px] transition-colors">
+                <button hx-post="/assessment/progression/next_level" hx-target="body" class="w-full px-5 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold text-[13px] rounded-[10px] transition-colors">
                     Attempt Next Level
                 </button>
             </div>
@@ -1516,10 +1585,10 @@ async def view_results(request: Request, resume_id: int, session: AsyncSession =
                     <svg class="w-4 h-4 text-emerald-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"></path></svg>
                     Build My Capability
                 </label>
-                <div class="w-full px-4 py-2 bg-slate-50 border border-dashed border-slate-200 text-slate-400 text-[11px] font-medium rounded-[10px] flex items-center justify-center gap-2 select-none text-center">
-                    <svg class="w-3.5 h-3.5 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"></path></svg>
-                    Complete pathway to unlock certificate upon reassessment
-                </div>
+                <label for="learning-drawer" hx-get="/assessment/learning-recommendations?resume_id={resume_id}" hx-target="#drawer-content" class="w-full px-5 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold text-[13px] rounded-[10px] transition-colors flex items-center justify-center gap-2 cursor-pointer border border-dashed border-slate-300">
+                    <svg class="w-4 h-4 text-slate-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path></svg>
+                    Retake Assessment
+                </label>
             </div>
         </div>
         """
@@ -1707,10 +1776,10 @@ async def view_results(request: Request, resume_id: int, session: AsyncSession =
         
         <!-- Drawer Footer -->
         <div class="p-6 border-t border-gray-100 bg-white">
-            <button class="w-full py-3.5 bg-vivo-brand hover:bg-blue-600 text-white font-bold text-[14px] rounded-xl shadow-sm shadow-blue-200 transition-colors flex items-center justify-center gap-2">
+            <a href="/assessment/learning-plan/pdf?resume_id={resume_id}" target="_blank" class="w-full py-3.5 bg-vivo-brand hover:bg-blue-600 text-white font-bold text-[14px] rounded-xl shadow-sm shadow-blue-200 transition-colors flex items-center justify-center gap-2 cursor-pointer">
                 <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path></svg>
                 Export Learning Plan to PDF
-            </button>
+            </a>
         </div>
     </div>
     '''
@@ -1811,7 +1880,18 @@ async def generate_learning_recommendations(resume_id: int, request: Request, se
             
     pathway = recommendations.get("learning_pathway", [])
         
-    cards_html = ""
+    cards_html = f'''
+    <div class="flex items-center justify-between pb-4 mb-6 border-b border-gray-200/80">
+        <div>
+            <span class="text-[10px] font-bold uppercase tracking-wider text-slate-400">Curriculum Roadmap</span>
+            <h4 class="text-[14px] font-extrabold text-vivo-navy">{len(pathway)} Priority Interventions</h4>
+        </div>
+        <a href="/assessment/learning-plan/pdf?resume_id={resume_id}" target="_blank" class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-blue-50 hover:bg-blue-100 text-vivo-brand text-[12px] font-bold transition-colors border border-blue-200 shadow-sm cursor-pointer">
+            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path></svg>
+            Download PDF
+        </a>
+    </div>
+    '''
     for i, rec in enumerate(pathway):
         priority = str(rec.get("priority", "")).lower()
         if priority == "high":
@@ -1904,12 +1984,309 @@ async def generate_learning_recommendations(resume_id: int, request: Request, se
         '''
         
 
+    confirmation_card_html = f'''
+        <!-- Export Learning Plan Action -->
+        <div class="relative pl-8 pt-4 pb-2">
+            <a href="/assessment/learning-plan/pdf?resume_id={resume_id}" target="_blank" class="w-full py-3 bg-white hover:bg-slate-50 text-vivo-navy font-bold text-[13px] rounded-[16px] border border-gray-200 shadow-sm transition-all flex items-center justify-center gap-2 cursor-pointer hover:border-vivo-brand">
+                <svg class="w-4 h-4 text-vivo-brand" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path></svg>
+                Export Learning Plan to PDF
+            </a>
+        </div>
+
+        <!-- Pathway Completion Confirmation Card -->
+        <div class="relative pl-8 pt-2">
+            <!-- Timeline Dot -->
+            <div class="absolute top-5 left-0 w-6 h-6 rounded-full bg-emerald-500 text-white flex items-center justify-center border-2 border-white shadow-sm z-10">
+                <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M5 13l4 4L19 7"></path></svg>
+            </div>
+            
+            <div class="bg-white rounded-[20px] p-6 shadow-sm border border-gray-200">
+                <div class="flex items-center gap-2 mb-2">
+                    <span class="px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider bg-emerald-50 text-emerald-700 border border-emerald-200">Next Step</span>
+                    <span class="text-[11px] text-gray-500 font-medium">Reassessment Verification</span>
+                </div>
+                <h4 class="text-[16px] font-bold text-vivo-navy mb-2">Ready to Certify?</h4>
+                <p class="text-[13px] text-gray-600 mb-4 leading-relaxed">Please confirm you have completed your preparation before starting reassessment.</p>
+                
+                <label class="flex items-start gap-3 p-3.5 rounded-[12px] bg-slate-50 hover:bg-slate-100 border border-slate-200 cursor-pointer transition-all mb-4 select-none">
+                    <input type="checkbox" id="chk-pathway-completed" class="checkbox checkbox-sm checkbox-primary rounded mt-0.5" onchange="document.getElementById('btn-drawer-retake').disabled = !this.checked;" />
+                    <span class="text-[13px] text-slate-700 font-medium leading-snug">
+                        I've completed my learning pathway and understand that my next assessment will test new, randomized scenarios.
+                    </span>
+                </label>
+                
+                <button id="btn-drawer-retake" disabled hx-post="/assessment/progression/retake" hx-target="body" class="w-full py-3 bg-vivo-brand hover:bg-blue-700 disabled:opacity-40 disabled:cursor-not-allowed text-white font-bold text-[13px] rounded-[10px] transition-all flex items-center justify-center gap-2 shadow-sm">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path></svg>
+                    <span>Confirm & Start Reassessment</span>
+                </button>
+            </div>
+        </div>
+    '''
+
     html = f'''
     <div class="animate-fade-in pl-2 relative pb-8">
         {cards_html}
+        {confirmation_card_html}
     </div>
     '''
     return HTMLResponse(content=html)
+
+from reportlab.pdfgen import canvas
+from reportlab.lib import colors
+
+class NumberedCanvas(canvas.Canvas):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self._saved_page_states = []
+
+    def showPage(self):
+        self._saved_page_states.append(dict(self.__dict__))
+        self._startPage()
+
+    def save(self):
+        num_pages = len(self._saved_page_states)
+        for state in self._saved_page_states:
+            self.__dict__.update(state)
+            self.draw_page_number(num_pages)
+            super().showPage()
+        super().save()
+
+    def draw_page_number(self, page_count):
+        self.saveState()
+        self.setFont("Helvetica", 8)
+        self.setFillColor(colors.HexColor("#64748B"))
+        self.setStrokeColor(colors.HexColor("#E2E8F0"))
+        self.setLineWidth(0.75)
+        self.line(36, 36, 559, 36)
+        self.drawString(36, 24, "VivoIQ Capability Development Plan • Confidential & Proprietary to Candidate")
+        page_str = f"Page {self._pageNumber} of {page_count}"
+        self.drawRightString(559, 24, page_str)
+        self.restoreState()
+
+def build_learning_pathway_pdf(
+    candidate_name: str,
+    email: str,
+    target_level: str,
+    score: float,
+    pathway: list,
+    issued_date: str = None,
+    plan_id: str = None
+) -> bytes:
+    from datetime import datetime
+    from reportlab.lib.pagesizes import A4
+    from reportlab.lib import colors
+    from reportlab.platypus import (
+        SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, KeepTogether, HRFlowable
+    )
+    from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+
+    buffer = io.BytesIO()
+    doc = SimpleDocTemplate(
+        buffer,
+        pagesize=A4,
+        leftMargin=36,
+        rightMargin=36,
+        topMargin=36,
+        bottomMargin=48
+    )
+
+    if not issued_date:
+        issued_date = datetime.now().strftime("%B %d, %Y")
+    if not plan_id:
+        import secrets
+        plan_id = f"VIQ-LP-{datetime.now().year}-{secrets.token_hex(3).upper()}"
+
+    styles = getSampleStyleSheet()
+    
+    c_navy = colors.HexColor("#0F172A")
+    c_brand = colors.HexColor("#2563EB")
+    c_muted = colors.HexColor("#64748B")
+    c_border = colors.HexColor("#E2E8F0")
+    
+    title_style = ParagraphStyle('DocTitle', parent=styles['Normal'], fontName='Helvetica-Bold', fontSize=18, leading=22, textColor=c_navy)
+    subtitle_style = ParagraphStyle('DocSubtitle', parent=styles['Normal'], fontName='Helvetica', fontSize=9, leading=13, textColor=c_muted)
+    brand_style = ParagraphStyle('BrandText', parent=styles['Normal'], fontName='Helvetica-Bold', fontSize=14, leading=18, textColor=c_navy)
+    h2_style = ParagraphStyle('H2Style', parent=styles['Normal'], fontName='Helvetica-Bold', fontSize=11, leading=15, textColor=c_navy)
+    body_style = ParagraphStyle('BodyText', parent=styles['Normal'], fontName='Helvetica', fontSize=8.5, leading=12, textColor=colors.HexColor("#334155"))
+    meta_label = ParagraphStyle('MetaLabel', parent=styles['Normal'], fontName='Helvetica-Bold', fontSize=7.5, leading=10, textColor=c_muted)
+    meta_val = ParagraphStyle('MetaVal', parent=styles['Normal'], fontName='Helvetica-Bold', fontSize=9, leading=12, textColor=c_navy)
+
+    story = []
+
+    # 1. TOP HEADER BAR
+    header_data = [
+        [
+            Paragraph('<b>vivo<font color="#2563EB">IQ</font></b> <font size="9" color="#64748B">| AI Capability Assessment</font>', brand_style),
+            Paragraph(f'<font size="8" color="#64748B">REFERENCE ID:</font> <b>{plan_id}</b>', ParagraphStyle('HRight', parent=meta_label, alignment=2))
+        ]
+    ]
+    t_header = Table(header_data, colWidths=[320, 203])
+    t_header.setStyle(TableStyle([
+        ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
+        ('LEFTPADDING', (0,0), (-1,-1), 0),
+        ('RIGHTPADDING', (0,0), (-1,-1), 0),
+        ('BOTTOMPADDING', (0,0), (-1,-1), 6),
+    ]))
+    story.append(t_header)
+    story.append(HRFlowable(width="100%", thickness=1.5, color=c_brand, spaceBefore=2, spaceAfter=14))
+
+    # 2. DOCUMENT TITLE & SUBTITLE
+    story.append(Paragraph("Personalized Capability Development Plan", title_style))
+    story.append(Paragraph("A structured curriculum addressing diagnostic performance gaps to unlock credentialing upon reassessment.", subtitle_style))
+    story.append(Spacer(1, 12))
+
+    # 3. METADATA SUMMARY GRID
+    score_status = "Benchmark Met" if score >= 70 else "Development Required"
+    score_color = "#059669" if score >= 70 else "#BE123C"
+    
+    meta_data = [
+        [
+            Paragraph("CANDIDATE NAME", meta_label),
+            Paragraph("DIAGNOSTIC SCORE", meta_label),
+            Paragraph("TARGET CAPABILITY TIER", meta_label),
+            Paragraph("PLAN ISSUED DATE", meta_label)
+        ],
+        [
+            Paragraph(candidate_name, meta_val),
+            Paragraph(f'<font color="{score_color}">{score:.1f}%</font> ({score_status})', meta_val),
+            Paragraph(target_level, meta_val),
+            Paragraph(issued_date, meta_val)
+        ]
+    ]
+    t_meta = Table(meta_data, colWidths=[130, 130, 143, 120])
+    t_meta.setStyle(TableStyle([
+        ('BACKGROUND', (0,0), (-1,-1), colors.HexColor("#F8FAFC")),
+        ('BOX', (0,0), (-1,-1), 1, c_border),
+        ('INNERGRID', (0,0), (-1,-1), 0.5, c_border),
+        ('TOPPADDING', (0,0), (-1,-1), 8),
+        ('BOTTOMPADDING', (0,0), (-1,-1), 8),
+        ('LEFTPADDING', (0,0), (-1,-1), 10),
+        ('RIGHTPADDING', (0,0), (-1,-1), 10),
+    ]))
+    story.append(t_meta)
+    story.append(Spacer(1, 14))
+
+    # 4. EXECUTIVE SUMMARY
+    summary_text = (
+        "<b>Executive Summary & Diagnostic Context:</b><br/>"
+        "During your recent VivoIQ procurement assessment, our diagnostic engine evaluated your responses against "
+        "rigorous competency standards. To achieve verified certification, VivoIQ requires an overall benchmark of ≥70% "
+        "with no critical domain falling below 50%. The curriculum outlined below specifies targeted, high-impact learning "
+        "interventions tailored to your exact performance evidence."
+    )
+    p_summary = Paragraph(summary_text, body_style)
+    t_sum = Table([[p_summary]], colWidths=[523])
+    t_sum.setStyle(TableStyle([
+        ('BACKGROUND', (0,0), (-1,-1), colors.HexColor("#EFF6FF")),
+        ('LINELEFT', (0,0), (-1,-1), 3, c_brand),
+        ('BOX', (0,0), (-1,-1), 0.5, colors.HexColor("#BFDBFE")),
+        ('TOPPADDING', (0,0), (-1,-1), 8),
+        ('BOTTOMPADDING', (0,0), (-1,-1), 8),
+        ('LEFTPADDING', (0,0), (-1,-1), 12),
+        ('RIGHTPADDING', (0,0), (-1,-1), 12),
+    ]))
+    story.append(t_sum)
+    story.append(Spacer(1, 16))
+
+    # 5. CURRICULUM SECTION
+    story.append(Paragraph(f"<b>Targeted Capability Curriculum ({len(pathway)} Priority Modules)</b>", h2_style))
+    story.append(Spacer(1, 8))
+
+    for i, rec in enumerate(pathway, 1):
+        priority = str(rec.get("priority", "Medium")).capitalize()
+        rec_type = str(rec.get("type", "Mandatory")).upper()
+        domain = str(rec.get("domain", "Procurement Competency")).upper()
+        asset = rec.get("recommended_asset", "Targeted Learning Asset")
+        gap = rec.get("gap", "Identified competency gap.")
+        evidence = rec.get("evidence", "Diagnostic performance data.")
+        outcome = rec.get("expected_outcome", "Strengthen practical knowledge.")
+        reassessment = rec.get("suggested_reassessment", "Evaluation on upgraded scenarios.")
+
+        if priority == "High":
+            badge_fg = "#BE123C"
+            accent_bar = colors.HexColor("#E11D48")
+        elif priority == "Medium":
+            badge_fg = "#B45309"
+            accent_bar = colors.HexColor("#F59E0B")
+        else:
+            badge_fg = "#047857"
+            accent_bar = colors.HexColor("#10B981")
+
+        header_p_left = Paragraph(f'<font color="{badge_fg}"><b>{priority.upper()} PRIORITY • {rec_type}</b></font>', meta_label)
+        header_p_right = Paragraph(f'<b>DOMAIN:</b> {domain}', ParagraphStyle('DomRight', parent=meta_label, alignment=2))
+        
+        card_header = Table([[header_p_left, header_p_right]], colWidths=[260, 247])
+        card_header.setStyle(TableStyle([
+            ('BACKGROUND', (0,0), (-1,-1), colors.HexColor("#F8FAFC")),
+            ('BOTTOMPADDING', (0,0), (-1,-1), 4),
+            ('TOPPADDING', (0,0), (-1,-1), 4),
+            ('LEFTPADDING', (0,0), (-1,-1), 8),
+            ('RIGHTPADDING', (0,0), (-1,-1), 8),
+        ]))
+
+        body_content = [
+            Paragraph(f'<font size="10.5"><b>{i}. {asset}</b></font>', title_style),
+            Spacer(1, 3),
+            Paragraph(f'<b>Capability Gap Focus:</b> {gap}', ParagraphStyle('GapP', parent=body_style, textColor=colors.HexColor("#9A3412"))),
+            Spacer(1, 3),
+            Paragraph(f'<b>Observed Diagnostic Evidence:</b> {evidence}', body_style),
+            Spacer(1, 5),
+            Table([
+                [
+                    Paragraph(f'<b>Expected Outcome:</b><br/>{outcome}', body_style),
+                    Paragraph(f'<b>Reassessment Focus:</b><br/>{reassessment}', body_style)
+                ]
+            ], colWidths=[250, 250], style=[
+                ('BACKGROUND', (0,0), (-1,-1), colors.HexColor("#F8FAFC")),
+                ('BOX', (0,0), (-1,-1), 0.5, c_border),
+                ('TOPPADDING', (0,0), (-1,-1), 5),
+                ('BOTTOMPADDING', (0,0), (-1,-1), 5),
+                ('LEFTPADDING', (0,0), (-1,-1), 8),
+                ('RIGHTPADDING', (0,0), (-1,-1), 8),
+            ])
+        ]
+
+        card_table = Table([[card_header], [body_content]], colWidths=[515])
+        card_table.setStyle(TableStyle([
+            ('LINELEFT', (0,0), (-1,-1), 3.5, accent_bar),
+            ('BOX', (0,0), (-1,-1), 0.5, c_border),
+            ('TOPPADDING', (0,0), (-1,-1), 0),
+            ('BOTTOMPADDING', (0,0), (-1,-1), 8),
+            ('LEFTPADDING', (0,0), (-1,-1), 0),
+            ('RIGHTPADDING', (0,0), (-1,-1), 0),
+            ('LEFTPADDING', (0,1), (-1,1), 10),
+            ('RIGHTPADDING', (0,1), (-1,1), 10),
+            ('TOPPADDING', (0,1), (-1,1), 6),
+        ]))
+
+        story.append(KeepTogether([card_table, Spacer(1, 10)]))
+
+    # 6. REASSESSMENT INSTRUCTIONS
+    reassess_box = [
+        Paragraph("<b>Reassessment Guidelines & Passing Standard</b>", h2_style),
+        Spacer(1, 3),
+        Paragraph(
+            "Once you have completed the assigned curriculum, return to the VivoIQ Platform and confirm completion "
+            "to initiate reassessment. <b>Reassessment will introduce randomized, higher-rigor scenarios targeting "
+            "your diagnosed gaps under a 30-minute timed environment.</b> Certification is awarded upon achieving ≥70% overall "
+            "with zero critical domains below 50%.",
+            body_style
+        )
+    ]
+    t_reassess = Table([[reassess_box]], colWidths=[523])
+    t_reassess.setStyle(TableStyle([
+        ('BACKGROUND', (0,0), (-1,-1), colors.HexColor("#F0FDF4")),
+        ('LINELEFT', (0,0), (-1,-1), 3, colors.HexColor("#16A34A")),
+        ('BOX', (0,0), (-1,-1), 0.5, colors.HexColor("#BBF7D0")),
+        ('TOPPADDING', (0,0), (-1,-1), 8),
+        ('BOTTOMPADDING', (0,0), (-1,-1), 8),
+        ('LEFTPADDING', (0,0), (-1,-1), 12),
+        ('RIGHTPADDING', (0,0), (-1,-1), 12),
+    ]))
+    story.append(KeepTogether([Spacer(1, 4), t_reassess]))
+
+    doc.build(story, canvasmaker=NumberedCanvas)
+    return buffer.getvalue()
 
 def build_certificate_pdf(
     candidate_name: str,
@@ -2298,6 +2675,84 @@ async def download_certificate_pdf(resume_id: int, request: Request, session: As
         media_type="application/pdf",
         headers={
             "Content-Disposition": f'attachment; filename="VivoIQ_Certificate_{safe_name}_{cred_id}.pdf"'
+        }
+    )
+
+
+@app.get("/assessment/learning-plan/pdf")
+async def export_learning_plan_pdf(resume_id: int, request: Request, session: AsyncSession = Depends(get_session)):
+    user_id_cookie = request.cookies.get("user_id")
+    if not user_id_cookie: return HTMLResponse("Unauthorized", status_code=401)
+    user_id = int(user_id_cookie)
+    
+    # 1. Fetch user info via Stored Procedure
+    user_res = await session.execute(text("CALL GetUserById(:u_id)"), {"u_id": user_id})
+    user_row = user_res.mappings().first()
+    candidate_name = user_row["name"].title() if (user_row and user_row.get("name")) else "Procurement Professional"
+    candidate_email = user_row["email"] if user_row else ""
+    
+    # 2. Fetch expected level & profile via Stored Procedure
+    prof_res = await session.execute(text("CALL GetCandidateProfileWithLevel(:r_id)"), {"r_id": resume_id})
+    prof_row = prof_res.mappings().first()
+    expected_level = prof_row.get("expected_level", 1) if prof_row else 1
+    levels_map = {1: "Foundation", 2: "Practitioner", 3: "Advanced", 4: "Expert", 5: "Leader"}
+    target_level = f"Level {expected_level} – {levels_map.get(expected_level, 'Practitioner')}"
+    
+    # 3. Fetch score via Stored Procedure
+    score_res = await session.execute(text("CALL GetLatestAssessmentResult(:r_id)"), {"r_id": resume_id})
+    score_row = score_res.mappings().first()
+    score = float(score_row["total_score"]) if score_row else 0.0
+    
+    # 4. Fetch Learning Pathway via Stored Procedure
+    cached_res = await session.execute(text("CALL GetLearningPathwayByResumeId(:r_id)"), {"r_id": resume_id})
+    cached_row = cached_res.mappings().first()
+    pathway = []
+    if cached_row and cached_row.get("pathway_json"):
+        try:
+            data = json.loads(cached_row["pathway_json"])
+            pathway = data.get("learning_pathway", [])
+        except Exception:
+            pathway = []
+            
+    if not pathway:
+        if score_row:
+            try:
+                ai7_results = json.loads(score_row["breakdown_json"])
+                from ai_agents import run_learning_recommendation_agent
+                recs = run_learning_recommendation_agent(ai7_results, expected_level)
+                pathway = recs.get("learning_pathway", [])
+                if pathway:
+                    try:
+                        await session.execute(
+                            text("CALL SaveLearningPathway(:u_id, :r_id, :p_json)"),
+                            {"u_id": user_id, "r_id": resume_id, "p_json": json.dumps(recs)}
+                        )
+                        await session.commit()
+                    except Exception as e:
+                        print("Error caching generated pathway:", e)
+            except Exception as e:
+                print("Error generating learning pathway for PDF:", e)
+                
+    if not pathway:
+        return HTMLResponse("<div class='p-6 bg-red-50 text-red-600 font-bold'>Unable to generate learning pathway. Please ensure assessment results are available.</div>", status_code=404)
+        
+    pdf_bytes = build_learning_pathway_pdf(
+        candidate_name=candidate_name,
+        email=candidate_email,
+        target_level=target_level,
+        score=score,
+        pathway=pathway
+    )
+    
+    safe_name = candidate_name.replace(" ", "_").replace("'", "")
+    filename = f"VivoIQ_Learning_Plan_{safe_name}_Resume{resume_id}.pdf"
+    
+    return Response(
+        content=pdf_bytes,
+        media_type="application/pdf",
+        headers={
+            "Content-Disposition": f'attachment; filename="{filename}"',
+            "Content-Type": "application/pdf"
         }
     )
 

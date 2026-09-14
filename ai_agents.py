@@ -95,13 +95,38 @@ def run_resume_intelligence_agent(resume_text: str) -> dict:
         print(f"Error parsing AI-1 JSON: {e}")
         return {}
 
-def run_assessment_blueprint_agent(capability_profile: dict) -> dict:
+def run_assessment_blueprint_agent(capability_profile: dict, previous_results: dict = None, progression_type: str = None) -> dict:
     """
     AI-3: Assessment Blueprint Agent
     Builds a 20-slot question blueprint from the candidate's capability profile.
+    Supports Next-Level Progression and Retakes by incorporating previous assessment results.
     """
     model = genai.GenerativeModel("gemini-3.6-flash")
     
+    progression_instructions = ""
+    if progression_type == "next_level" and previous_results:
+        progression_instructions = f"""
+    PROGRESSION CONTEXT (NEXT LEVEL):
+    The candidate has successfully passed their previous verified level and is attempting the NEXT level.
+    You must generate a new blueprint using their previous assessment evidence plus their capability profile.
+    - INCREASE complexity, ambiguity, breadth, and leadership/commercial judgment appropriately for the higher level.
+    - Do not simply repeat harder versions of the same questions. Focus on strategic trade-offs and advanced application.
+    
+    PREVIOUS ASSESSMENT EVIDENCE:
+    {json.dumps(previous_results, indent=2)}
+        """
+    elif progression_type == "retake" and previous_results:
+        progression_instructions = f"""
+    PROGRESSION CONTEXT (RETAKE):
+    The candidate did not pass their previous attempt. They have completed their learning pathway and are reassessing at the SAME level.
+    You must generate a new blueprint using their previous assessment evidence plus their capability profile.
+    - Target the specific capability gaps identified in the previous assessment heavily.
+    - Ensure a completely different set of topics/scenarios are tested compared to the previous attempt (do not reuse previous questions).
+    
+    PREVIOUS ASSESSMENT EVIDENCE:
+    {json.dumps(previous_results, indent=2)}
+        """
+
     prompt = f"""
     SYSTEM ROLE:
     You are the VivoIQ Assessment Architect. Build a 20-question personalized assessment blueprint from the structured candidate capability profile.
@@ -118,6 +143,7 @@ def run_assessment_blueprint_agent(capability_profile: dict) -> dict:
     6. Do NOT write the actual questions yet.
     7. For every question slot specify competency, sub_competency, difficulty (1-5), question_type, purpose, weight, and resume_claim_being_verified.
     8. Ensure the complete assessment can reasonably be completed within 30 minutes.
+    {progression_instructions}
     
     OUTPUT FORMAT:
     Return ONLY a valid JSON object without any markdown formatting. The JSON must exactly match this schema:
