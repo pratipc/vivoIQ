@@ -15,7 +15,7 @@ USER_SERVICE_URL = os.getenv("USER_SERVICE_URL", "http://localhost:8001")
 ASSESSMENT_SERVICE_URL = os.getenv("ASSESSMENT_SERVICE_URL", "http://localhost:8002")
 
 async def proxy_request(request: Request, service_url: str, path: str):
-    async with httpx.AsyncClient(timeout=180.0) as client:
+    async with httpx.AsyncClient(timeout=300.0) as client:
         # Forward headers, but you might want to filter them in a real app
         headers = dict(request.headers)
         headers.pop("host", None)
@@ -55,9 +55,12 @@ async def proxy_request(request: Request, service_url: str, path: str):
                     proxy_response.headers.append(k, v)
                     
             return proxy_response
-        
         except httpx.RequestError as exc:
             raise HTTPException(status_code=503, detail=f"Service unavailable: {exc}")
+
+@app.get("/favicon.ico")
+async def favicon():
+    return Response(status_code=204)
 
 @app.middleware("http")
 async def htmx_middleware(request: Request, call_next):
