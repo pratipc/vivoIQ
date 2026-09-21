@@ -1,3 +1,4 @@
+from ui_components import get_progress_tracker
 from fastapi import FastAPI, Request, UploadFile, File, Form, Depends
 from fastapi.responses import HTMLResponse, Response, JSONResponse
 from fastapi.templating import Jinja2Templates
@@ -40,6 +41,7 @@ async def assessment_onboarding(request: Request, session: AsyncSession = Depend
         result = await session.execute(text("CALL GetUserStage(:u_id)"), {"u_id": user_id_cookie})
         user_row = result.mappings().first()
         
+        # If Results stage, redirect there
         if user_row and user_row["stage"] == "Results":
             r_result = await session.execute(
                 text("CALL GetLatestResumeId(:u_id)"),
@@ -56,196 +58,48 @@ async def assessment_onboarding(request: Request, session: AsyncSession = Depend
                 else:
                     from fastapi.responses import RedirectResponse
                     return RedirectResponse(url=f"/assessment/results?resume_id={new_resume_id}", status_code=303)
-                
-        if user_row and user_row["stage"] == "Test":
-            sch_result = await session.execute(
-                text("CALL GetLatestAssessmentSchedule(:u_id)"),
-                {"u_id": user_id_cookie}
-            )
-            sch_row = sch_result.mappings().first()
-            
-            if sch_row:
-                msg_title = "Test Scheduled!"
-                msg_body = f"We will email you a secure link to take the test on {sch_row['scheduled_date']} at {sch_row['scheduled_time']}."
-                btn_html = """<button class="w-full h-10 bg-white border border-gray-300 hover:bg-gray-50 text-gray-700 text-[13px] font-medium rounded-[8px] shadow-sm transition-colors">Return to Dashboard</button>"""
-                
-                return HTMLResponse(content=f"""
-                <div class="absolute top-6 right-8 z-50 animate-fade-in">
-                    <a href="/users/logout" class="text-[13px] font-semibold text-gray-400 hover:text-vivo-brand transition-colors flex items-center gap-1.5 cursor-pointer">
-                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1"></path></svg> 
-                        Log out
-                    </a>
-                </div>
-                <div class="w-full animate-fade-in-up max-w-lg mx-auto">
-                    <!-- Progress tracker elements omitted for brevity in response -->
-                    <div class="w-[520px] mx-auto bg-white rounded-[12px] shadow-sm border border-gray-200 p-8 flex flex-col items-center justify-center text-center">
-                        <h2 class="text-2xl font-bold text-vivo-navy mb-2 tracking-tight">{msg_title}</h2>
-                        <p class="text-[13px] text-gray-500 mb-6 leading-relaxed">We successfully processed your resume. {msg_body}</p>
-                        {btn_html}
-                    </div>
-                </div>
-                """)
-            else:
-                # If they chose "Evaluate Now" but refreshed the page, seamlessly restore their state
-                r_result = await session.execute(
-                    text("CALL GetLatestResumeId(:u_id)"),
-                    {"u_id": user_id_cookie}
-                )
-                r_row = r_result.mappings().first()
-                new_resume_id = r_row["id"] if r_row else 0
-                
-                # Check if profile is already built
-                prof_check = await session.execute(
-                    text("CALL GetCandidateProfile(:r_id)"),
-                    {"r_id": new_resume_id}
-                )
-                
-                if prof_check.mappings().first():
-                    from fastapi.responses import RedirectResponse
-                    return RedirectResponse(url=f"/assessment/build-profile?resume_id={new_resume_id}", status_code=303)
-                
-                return HTMLResponse(content=f"""
-                <div class="absolute top-6 right-8 z-50 animate-fade-in">
-                    <a href="/users/logout" class="text-[13px] font-semibold text-gray-400 hover:text-vivo-brand transition-colors flex items-center gap-1.5 cursor-pointer">
-                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1"></path></svg> 
-                        Log out
-                    </a>
-                </div>
-                <div class="w-full min-h-[60vh] flex flex-col items-center justify-center animate-fade-in-up">
-                    <div class="w-16 h-16 bg-blue-50/50 rounded-[16px] flex items-center justify-center mb-6 shadow-sm border border-blue-100 relative">
-                        <svg class="w-8 h-8 text-vivo-brand animate-pulse" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"></path>
-                        </svg>
-                        <div class="absolute -bottom-1 -right-1 w-4 h-4 bg-green-500 rounded-full border-2 border-white"></div>
-                    </div>
-                    <h2 class="text-[22px] font-bold text-vivo-navy tracking-tight mb-5">Analyzing Resume</h2>
                     
-                    <!-- Dynamic Text & Progress Bar -->
-                    <div class="w-full max-w-[320px]">
-                        <div class="flex justify-between items-center mb-2">
-                            <span id="ai-status-text" class="text-[12px] font-medium text-gray-500 transition-opacity duration-300">Extracting professional experience...</span>
-                            <span id="ai-progress-pct" class="text-[12px] font-bold text-vivo-brand">0%</span>
-                        </div>
-                        <div class="w-full h-2 bg-gray-100 rounded-full overflow-hidden">
-                            <div id="ai-progress-bar" class="h-full bg-vivo-brand rounded-full transition-all duration-500 ease-out" style="width: 0%"></div>
-                        </div>
-                    </div>
-                    
-                    <!-- JavaScript for Dynamic Messaging and Progress -->
-                    <script>
-                    (function() {{
-                        const statuses = [
-                            "Extracting professional experience...",
-                            "Mapping skills to VivoIQ framework...",
-                            "Calibrating assessment difficulty...",
-                            "Structuring personalized blueprint...",
-                            "Finalizing capability profile..."
-                        ];
-                        let statusIdx = 0;
-                        const textEl = document.getElementById("ai-status-text");
-                        const barEl = document.getElementById("ai-progress-bar");
-                        const pctEl = document.getElementById("ai-progress-pct");
-                        
-                        // Cycle text every 3.5 seconds
-                        const textInterval = setInterval(() => {{
-                            if (statusIdx < statuses.length - 1) statusIdx++;
-                            if(textEl) {{
-                                textEl.style.opacity = '0';
-                                setTimeout(() => {{
-                                    textEl.textContent = statuses[statusIdx];
-                                    textEl.style.opacity = '1';
-                                }}, 300);
-                            }}
-                        }}, 3500);
-                        
-                        // Simulate progress up to 99% over 30 seconds
-                        let progress = 0;
-                        const totalDuration = 30000;
-                        const intervalTime = 500;
-                        const progressIncrement = (99 / (totalDuration / intervalTime));
-                        
-                        const progInterval = setInterval(() => {{
-                            progress += progressIncrement;
-                            if(progress > 99) progress = 99;
-                            if(barEl) barEl.style.width = progress + '%';
-                            if(pctEl) pctEl.textContent = Math.floor(progress) + '%';
-                        }}, intervalTime);
-                        
-                        // Cleanup
-                        document.body.addEventListener("htmx:beforeSwap", function cleanup() {{
-                            clearInterval(textInterval);
-                            clearInterval(progInterval);
-                            document.body.removeEventListener("htmx:beforeSwap", cleanup);
-                        }});
-                    }})();
-                    </script>
-                    
-                    <!-- Triggers generation immediately on load -->
-                    <div hx-get="/assessment/build-profile?resume_id={new_resume_id}" hx-trigger="load" hx-target="#main-content" class="hidden"></div>
-                </div>
-                """)
-            
-    html_content = """
-    <div class="absolute top-6 right-8 z-50 animate-fade-in">
-        <a href="/users/logout" class="text-[13px] font-semibold text-gray-400 hover:text-vivo-brand transition-colors flex items-center gap-1.5 cursor-pointer">
-            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1"></path></svg> 
-            Log out
-        </a>
-    </div>
-    <div class="w-full animate-fade-in-up max-w-lg mx-auto">
-        <!-- Progress Tracker (64px tall) -->
-        <div class="flex items-center justify-center mb-10 h-16 w-full px-12">
-            <!-- Account (Completed) -->
-            <div class="flex flex-col items-center relative z-10 w-8">
-                <div class="w-6 h-6 rounded-full bg-blue-500 text-white flex items-center justify-center text-[10px] shadow-sm">
-                    <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M5 13l4 4L19 7"></path></svg>
-                </div>
-                <span class="text-[11px] font-medium text-gray-500 mt-2 absolute top-6 whitespace-nowrap">Account</span>
-            </div>
-            
-            <div class="flex-grow h-[2px] bg-blue-500 mx-2"></div>
-            
-            <!-- Resume (Current) -->
-            <div class="flex flex-col items-center relative z-10 w-8">
-                <div class="w-6 h-6 rounded-full bg-blue-500 text-white flex items-center justify-center shadow-sm">
-                    <div class="w-2 h-2 rounded-full bg-white"></div>
-                </div>
-                <span class="text-[11px] font-semibold text-vivo-navy mt-2 absolute top-6 whitespace-nowrap">Resume</span>
-            </div>
-            
-            <div class="flex-grow h-[2px] bg-gray-200 mx-2"></div>
-            
-            <!-- Test (Upcoming) -->
-            <div class="flex flex-col items-center relative z-10 w-8">
-                <div class="w-6 h-6 rounded-full bg-white border-[2px] border-gray-200 text-gray-300 flex items-center justify-center">
-                </div>
-                <span class="text-[11px] font-medium text-gray-400 mt-2 absolute top-6 whitespace-nowrap">Assessment</span>
-            </div>
-            
-            <div class="flex-grow h-[2px] bg-gray-200 mx-2"></div>
-            
-            <!-- Results (Upcoming) -->
-            <div class="flex flex-col items-center relative z-10 w-8">
-                <div class="w-6 h-6 rounded-full bg-white border-[2px] border-gray-200 text-gray-300 flex items-center justify-center">
-                </div>
-                <span class="text-[11px] font-medium text-gray-400 mt-2 absolute top-6 whitespace-nowrap">Results</span>
-            </div>
-        </div>
+        # Check if they already have an uploaded resume
+        r_result = await session.execute(
+            text("CALL GetLatestResumeId(:u_id)"),
+            {"u_id": user_id_cookie}
+        )
+        r_row = r_result.mappings().first()
         
-        <!-- Drag & Drop Upload Card -->
-        <div class="w-[420px] mx-auto bg-white rounded-[12px] shadow-sm border border-gray-200 p-8 flex flex-col items-center justify-center text-center">
-            
-            <div class="mb-5 w-full">
-                <h2 class="text-[18px] font-bold text-vivo-navy mb-1.5 tracking-tight">Upload your resume</h2>
-                <p class="text-[12px] text-gray-500 leading-relaxed px-1">We'll use it to personalize your assessment based on your skills and experience.</p>
+        has_resume = False
+        resume_id = 0
+        original_filename = "Resume"
+        
+        if r_row:
+            has_resume = True
+            resume_id = r_row["id"]
+            # Fetch filename safely
+            f_res = await session.execute(
+                text("SELECT filename FROM resume WHERE id = :r_id"),
+                {"r_id": resume_id}
+            )
+            f_row = f_res.mappings().first()
+            if f_row and f_row.get("filename"):
+                original_filename = f_row["filename"]
+
+        if has_resume:
+            # Disabled State HTML
+            form_or_disabled_state = f"""
+            <div class="relative w-full h-[150px] border-[2px] border-solid border-emerald-200 bg-emerald-50 rounded-[8px] flex flex-col items-center justify-center mb-6">
+                <div class="text-emerald-500 mb-2">
+                    <svg class="w-8 h-8 mx-auto" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+                </div>
+                <p class="text-[14px] font-bold text-emerald-700 mb-1">Resume Uploaded & Analyzed</p>
+                <p class="text-[12px] font-medium text-emerald-600 truncate px-4 max-w-full">{original_filename}</p>
             </div>
-            
+            <a href="/assessment/build-profile?resume_id={resume_id}" class="w-full h-11 bg-vivo-brand hover:bg-blue-700 text-white font-bold text-[14px] rounded-[8px] shadow-sm flex items-center justify-center transition-all">Proceed to Capability Mapping</a>
+            """
+        else:
+            # Active Upload Form HTML
+            form_or_disabled_state = """
             <form hx-post="/assessment/upload-resume" hx-encoding="multipart/form-data" hx-target="#main-content" class="w-full">
-                
                 <div class="relative w-full h-[150px] border-[2px] border-dashed border-gray-300 hover:border-vivo-brand rounded-[8px] bg-gray-50/50 hover:bg-blue-50/30 transition-all flex flex-col items-center justify-center group cursor-pointer mb-6 overflow-hidden">
-                    
                     <input type="file" name="resume" class="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-20" accept=".pdf,.doc,.docx" required onchange="updateFileName(this)" />
-                    
                     <div id="upload-prompt" class="flex flex-col items-center pointer-events-none">
                         <div class="text-gray-400 group-hover:text-vivo-brand transition-colors mb-3">
                             <svg class="w-7 h-7 mx-auto" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -256,7 +110,6 @@ async def assessment_onboarding(request: Request, session: AsyncSession = Depend
                         <p class="text-[13px] text-gray-500 mb-4">or click to browse your files</p>
                         <p class="text-[11px] font-semibold text-gray-400 tracking-wider">PDF / DOCX &middot; 5 MB MAX</p>
                     </div>
-                    
                     <div id="file-name-display" class="hidden flex-col items-center text-center pointer-events-none px-4">
                         <!-- Filled by JS -->
                     </div>
@@ -283,15 +136,10 @@ async def assessment_onboarding(request: Request, session: AsyncSession = Depend
                             <h3 class="font-bold text-lg text-vivo-navy mb-5 text-left tracking-tight">Pick a Date & Time</h3>
                             
                             <div class="flex gap-6 w-full text-left">
-                                <!-- Date side -->
-                                <div class="flex-1">
+                                <!-- Calendar side -->
+                                <div class="flex-1 border-r border-gray-100 pr-6">
                                     <label class="block text-[11px] font-bold text-gray-400 uppercase tracking-wider mb-2 ml-1">Date</label>
-                                    <div class="relative">
-                                        <input type="text" id="flatpickr-date" name="scheduled_date" placeholder="Select date..." class="w-full px-4 py-2.5 rounded-[8px] border border-gray-300 bg-white text-[13px] font-medium text-gray-900 focus:border-vivo-brand focus:ring-1 focus:ring-vivo-brand outline-none transition-all cursor-pointer shadow-sm" />
-                                        <div class="absolute inset-y-0 right-0 pr-4 flex items-center pointer-events-none text-gray-400 text-lg">
-                                            📅
-                                        </div>
-                                    </div>
+                                    <input type="text" id="flatpickr-date" name="scheduled_date" placeholder="Select a date..." class="w-full text-[14px] font-semibold text-gray-700 bg-gray-50 border border-gray-200 rounded-[8px] px-4 py-3 focus:outline-none focus:ring-2 focus:ring-vivo-brand/20 transition-all cursor-pointer shadow-inner">
                                 </div>
                                 
                                 <!-- Time side -->
@@ -326,67 +174,76 @@ async def assessment_onboarding(request: Request, session: AsyncSession = Depend
                                 </div>
                             </div>
                             
-                            <div class="modal-action mt-8">
-                                <button type="button" class="h-10 bg-vivo-brand hover:bg-blue-700 text-white text-[13px] font-medium rounded-[8px] shadow-sm px-6 transition-all" onclick="saveSchedule()">Save Schedule</button>
+                            <div class="modal-action mt-8 flex justify-between items-center border-t border-gray-100 pt-5">
+                                <button type="button" class="text-[13px] font-bold text-gray-500 hover:text-gray-800 transition-colors" onclick="document.getElementById('schedule-modal').close()">Cancel</button>
+                                <button type="button" class="h-10 px-6 bg-vivo-navy text-white text-[13px] font-bold rounded-[8px] shadow hover:bg-gray-800 transition-colors" onclick="saveSchedule()">Save Schedule</button>
                             </div>
                         </div>
-                        <!-- Clicking outside closes it, but since it's in a form, we need to prevent submission on close, using method="dialog" helps natively, but we can also just use a button type="button" with onclick -->
-                        <div class="modal-backdrop bg-black/20" onclick="document.getElementById('schedule-modal').close()"></div>
                     </dialog>
                 </div>
                 
-                <button type="submit" class="w-full h-10 bg-vivo-brand hover:bg-blue-700 text-white text-[13px] font-medium rounded-[8px] shadow-sm hover:shadow transition-all flex items-center justify-center gap-2">
-                    <span>Continue</span>
-                    <span class="loading loading-spinner loading-xs submit-spinner hidden"></span>
-                </button>
+                <button type="submit" class="w-full h-11 bg-vivo-brand hover:bg-blue-700 text-white text-[14px] font-bold rounded-[8px] shadow-md transition-all mt-2">Proceed</button>
             </form>
+            """
+
+    html_content = f"""
+    <div class="absolute top-6 right-8 z-50 animate-fade-in">
+        <a href="/users/logout" class="text-[13px] font-semibold text-gray-400 hover:text-vivo-brand transition-colors flex items-center gap-1.5 cursor-pointer">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1"></path></svg> 
+            Log out
+        </a>
+    </div>
+    <div class="w-full animate-fade-in-up max-w-lg mx-auto">
+        {get_progress_tracker("Resume", resume_id)}
+        
+        <!-- Drag & Drop Upload Card -->
+        <div class="w-[420px] mx-auto bg-white rounded-[12px] shadow-sm border border-gray-200 p-8 flex flex-col items-center justify-center text-center">
+            
+            <div class="mb-5 w-full">
+                <h2 class="text-[18px] font-bold text-vivo-navy mb-1.5 tracking-tight">Upload your resume</h2>
+                <p class="text-[12px] text-gray-500 leading-relaxed px-1">We'll use it to personalize your assessment based on your skills and experience.</p>
+            </div>
+            
+            {form_or_disabled_state}
+            
+            <script>
+                function updateFileName(input) {{
+                    const fileNameElement = document.getElementById('file-name-display');
+                    const uploadPrompt = document.getElementById('upload-prompt');
+                    
+                    if (input.files && input.files[0]) {{
+                        uploadPrompt.classList.add('hidden');
+                        
+                        fileNameElement.classList.remove('hidden');
+                        fileNameElement.classList.add('flex');
+                        
+                        // SVG Checkmark icon
+                        fileNameElement.innerHTML = `
+                            <svg class="w-8 h-8 mx-auto mb-3 text-green-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+                            <span class="text-vivo-navy font-semibold block truncate max-w-[280px] w-full">${{input.files[0].name}}</span>
+                            <span class="text-[12px] text-gray-500 mt-2 block font-medium">Click box to change</span>
+                        `;
+                    }} else {{
+                        uploadPrompt.classList.remove('hidden');
+                        fileNameElement.classList.add('hidden');
+                        fileNameElement.classList.remove('flex');
+                    }}
+                }}
+                
+                function saveSchedule() {{
+                    const dateVal = document.getElementById('flatpickr-date')?.value;
+                    const timeInput = document.querySelector('input[name="scheduled_time"]:checked');
+                    const summary = document.getElementById('schedule-summary');
+                    
+                    if (dateVal && timeInput) {{
+                        summary.innerHTML = `✓ Scheduled for ${{dateVal}} at ${{timeInput.value}}`;
+                        summary.classList.remove('hidden');
+                    }}
+                    document.getElementById('schedule-modal').close();
+                }}
+            </script>
         </div>
     </div>
-    <script>
-        // Initialize Flatpickr immediately upon loading the partial
-        if (typeof flatpickr !== 'undefined') {
-            flatpickr('#flatpickr-date', {
-                dateFormat: 'F j, Y',
-                minDate: 'today',
-                defaultDate: 'today',
-                appendTo: document.getElementById('schedule-modal') || document.body
-            });
-        }
-        
-        function saveSchedule() {
-            const dateVal = document.getElementById('flatpickr-date').value;
-            const timeInput = document.querySelector('input[name="scheduled_time"]:checked');
-            const summary = document.getElementById('schedule-summary');
-            
-            if (dateVal && timeInput) {
-                summary.innerHTML = `✓ Scheduled for ${dateVal} at ${timeInput.value}`;
-                summary.classList.remove('hidden');
-            }
-            document.getElementById('schedule-modal').close();
-        }
-
-        function updateFileName(input) {
-            const fileNameElement = document.getElementById('file-name-display');
-            const uploadPrompt = document.getElementById('upload-prompt');
-            
-            if (input.files && input.files[0]) {
-                uploadPrompt.classList.add('hidden');
-                fileNameElement.classList.remove('hidden');
-                fileNameElement.classList.add('flex');
-                
-                // SVG Checkmark icon
-                fileNameElement.innerHTML = `
-                    <svg class="w-8 h-8 mx-auto mb-3 text-green-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
-                    <span class="text-vivo-navy font-semibold block truncate max-w-[280px] w-full">${input.files[0].name}</span>
-                    <span class="text-[12px] text-gray-500 mt-2 block font-medium">Click box to change</span>
-                `;
-            } else {
-                uploadPrompt.classList.remove('hidden');
-                fileNameElement.classList.add('hidden');
-                fileNameElement.classList.remove('flex');
-            }
-        }
-    </script>
     """
     return HTMLResponse(content=html_content)
 
@@ -445,42 +302,9 @@ async def upload_resume(
                 }
             )
             await session.commit()
+            action_type = "immediate"
         
-            html_content = """
-            <div class="w-full animate-fade-in-up max-w-lg mx-auto">
-                <!-- Progress Tracker (64px tall) - TEST STAGE -->
-                <div class="flex items-center justify-center mb-10 h-16 w-full px-12">
-                    <div class="flex flex-col items-center relative z-10 w-8">
-                        <div class="w-6 h-6 rounded-full bg-blue-500 text-white flex items-center justify-center text-[10px] shadow-sm"><svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M5 13l4 4L19 7"></path></svg></div>
-                        <span class="text-[11px] font-medium text-gray-500 mt-2 absolute top-6 whitespace-nowrap">Account</span>
-                    </div>
-                    <div class="flex-grow h-[2px] bg-blue-500 mx-2"></div>
-                    <div class="flex flex-col items-center relative z-10 w-8">
-                        <div class="w-6 h-6 rounded-full bg-blue-500 text-white flex items-center justify-center text-[10px] shadow-sm"><svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M5 13l4 4L19 7"></path></svg></div>
-                        <span class="text-[11px] font-medium text-gray-500 mt-2 absolute top-6 whitespace-nowrap">Resume</span>
-                    </div>
-                    <div class="flex-grow h-[2px] bg-blue-500 mx-2"></div>
-                    <div class="flex flex-col items-center relative z-10 w-8">
-                        <div class="w-6 h-6 rounded-full bg-blue-500 text-white flex items-center justify-center shadow-sm"><div class="w-2 h-2 rounded-full bg-white"></div></div>
-                        <span class="text-[11px] font-semibold text-vivo-navy mt-2 absolute top-6 whitespace-nowrap">Assessment</span>
-                    </div>
-                    <div class="flex-grow h-[2px] bg-gray-200 mx-2"></div>
-                    <div class="flex flex-col items-center relative z-10 w-8">
-                        <div class="w-6 h-6 rounded-full bg-white border-[2px] border-gray-200 text-gray-300 flex items-center justify-center"></div>
-                        <span class="text-[11px] font-medium text-gray-400 mt-2 absolute top-6 whitespace-nowrap">Results</span>
-                    </div>
-                </div>
-                
-                <div class="w-[520px] mx-auto bg-white rounded-[12px] shadow-sm border border-gray-200 p-8 flex flex-col items-center justify-center text-center">
-                    <h2 class="text-2xl font-bold text-vivo-navy mb-2 tracking-tight">Test Scheduled!</h2>
-                    <p class="text-[13px] text-gray-500 mb-6 leading-relaxed">We successfully processed <strong>""" + resume.filename + """</strong>. We will email you a secure link to take the test on """ + scheduled_date + """ at """ + scheduled_time + """.</p>
-                    <button class="w-full h-10 bg-white border border-gray-300 hover:bg-gray-50 text-gray-700 text-[13px] font-medium rounded-[8px] shadow-sm transition-colors">Return to Dashboard</button>
-                </div>
-            </div>
-            """
-            return HTMLResponse(content=html_content)
-        
-        elif action_type == "immediate":
+        if action_type == "immediate":
             # Return loading screen immediately. This screen will trigger the heavy Gemini generation in the background.
             html_content = f"""
             <div class="w-full min-h-[60vh] flex flex-col items-center justify-center animate-fade-in-up">
@@ -600,12 +424,79 @@ async def build_profile(resume_id: int, request: Request, session: AsyncSession 
             
             if fp_row and fp_row.get("file_path"):
                 import os
-                from ai_agents import extract_text_from_pdf, run_resume_intelligence_agent, run_assessment_blueprint_agent
+                from ai_agents import extract_text_from_pdf, run_resume_intelligence_agent, run_capability_mapping_agent, run_assessment_blueprint_agent
                 file_path = fp_row["file_path"]
                 if os.path.exists(file_path):
+                    import asyncio
+                    
                     # Run AI-1
                     resume_text = extract_text_from_pdf(file_path)
-                    profile_json = run_resume_intelligence_agent(resume_text)
+                    profile_json = await asyncio.to_thread(run_resume_intelligence_agent, resume_text)
+                    
+                    # Run AI-2 and AI-3 Concurrently!
+                    ai2_task = asyncio.to_thread(run_capability_mapping_agent, profile_json)
+                    ai3_task = asyncio.to_thread(run_assessment_blueprint_agent, profile_json)
+                    
+                    ai2_result, blueprint_json = await asyncio.gather(ai2_task, ai3_task)
+                    
+                    # Generate HTML safely in Python
+                    level = ai2_result.get("level", profile_json.get("expected_vivoiq_level", 1))
+                    role = ai2_result.get("role", "Procurement Professional")
+                    cta = ai2_result.get("cta", "Please proceed to the assessment to verify your theoretical depth.")
+                    
+                    domain_html = "".join([f"<span class='px-3 py-1 bg-blue-50 text-blue-700 text-[13px] rounded-md font-medium border border-blue-100'>{d.get('domain')}: {d.get('weight')}</span>" for d in ai2_result.get("domain_weights", [])])
+                    if not domain_html: domain_html = "<span class='text-[13px] text-gray-500'>Evaluating...</span>"
+                    
+                    high_conf_html = "".join([f"""
+                        <div class='p-3 border border-emerald-100 rounded-lg bg-emerald-50/30'>
+                            <div class='flex justify-between items-center mb-1'>
+                                <span class='font-bold text-slate-700 text-[14px]'>{c.get('name')}</span>
+                                <span class='text-emerald-600 font-bold text-[13px]'>{c.get('confidence')}</span>
+                            </div>
+                            <p class='text-[13px] text-slate-600 leading-snug'>{c.get('evidence')}</p>
+                        </div>
+                    """ for c in ai2_result.get("high_confidence", [])])
+                    
+                    verify_html = "".join([f"""
+                        <div class='p-3 border border-amber-100 rounded-lg bg-amber-50/30'>
+                            <div class='font-bold text-slate-700 text-[14px] mb-1'>{v.get('name')}</div>
+                            <p class='text-[13px] text-slate-600 leading-snug'>{v.get('reason')}</p>
+                        </div>
+                    """ for v in ai2_result.get("areas_to_verify", [])])
+
+                    ai2_html = f"""
+                    <div class="flex flex-col gap-5 w-full">
+                        <div class="flex items-center justify-between p-4 bg-slate-50 border border-slate-100 rounded-xl">
+                            <div>
+                                <h3 class="text-[16px] font-bold text-vivo-navy">{role}</h3>
+                                <p class="text-[13px] text-gray-500 mt-0.5">Estimated Capability Level</p>
+                            </div>
+                            <div class="w-12 h-12 bg-white rounded-full flex items-center justify-center border border-gray-200 shadow-sm text-vivo-brand font-bold text-[18px]">
+                                L{level}
+                            </div>
+                        </div>
+                        
+                        <div>
+                            <h4 class="text-[12px] font-bold text-gray-400 uppercase tracking-wider mb-2">Domain Focus Weights</h4>
+                            <div class="flex flex-wrap gap-2">{domain_html}</div>
+                        </div>
+                        
+                        <div class="grid grid-cols-1 gap-2">
+                            <h4 class="text-[12px] font-bold text-emerald-500 uppercase tracking-wider mt-1">High Confidence Competencies</h4>
+                            {high_conf_html}
+                        </div>
+                        
+                        <div class="grid grid-cols-1 gap-2">
+                            <h4 class="text-[12px] font-bold text-amber-500 uppercase tracking-wider mt-1">Areas Requiring Verification</h4>
+                            {verify_html}
+                        </div>
+                        
+                        <div class="p-3 bg-blue-50 rounded-xl border border-blue-100 text-[13.5px] text-blue-800 leading-relaxed font-medium">
+                            {cta}
+                        </div>
+                    </div>
+                    """
+                    profile_json["ai2_narrative_html"] = ai2_html
                     
                     # Save Profile
                     expected_level = profile_json.get("expected_vivoiq_level", 1)
@@ -615,8 +506,7 @@ async def build_profile(resume_id: int, request: Request, session: AsyncSession 
                         {"u_id": user_id, "r_id": resume_id, "prof": json.dumps(profile_json), "lvl": expected_level}
                     )
                     
-                    # Run AI-3
-                    blueprint_json = run_assessment_blueprint_agent(profile_json)
+                    # Save Blueprint
                     
                     # Save Blueprint
                     await session.execute(
@@ -626,10 +516,16 @@ async def build_profile(resume_id: int, request: Request, session: AsyncSession 
                     await session.commit()
                 
         # Generate Readiness HTML
-        level_str = profile_json.get("expected_vivoiq_level", "Unknown")
-        roles = ", ".join(profile_json.get("roles", []))
         
+
         html_content = f"""
+        <style>
+        .vivo-scrollbar::-webkit-scrollbar {{ width: 5px; }}
+        .vivo-scrollbar::-webkit-scrollbar-track {{ background: transparent; }}
+        .vivo-scrollbar::-webkit-scrollbar-thumb {{ background: #d9e2f0; border-radius: 9999px; }}
+        .vivo-scrollbar::-webkit-scrollbar-thumb:hover {{ background: #c5d3e5; }}
+        .vivo-scrollbar {{ scrollbar-width: thin; scrollbar-color: #d9e2f0 transparent; }}
+        </style>
         <div class="absolute top-6 right-8 z-50 animate-fade-in">
             <a href="/users/logout" class="text-[13px] font-semibold text-gray-400 hover:text-vivo-brand transition-colors flex items-center gap-1.5 cursor-pointer">
                 <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1"></path></svg> 
@@ -638,150 +534,67 @@ async def build_profile(resume_id: int, request: Request, session: AsyncSession 
         </div>
         <div class="w-full h-full flex flex-col items-center justify-center animate-fade-in-up">
             
-            <div class="w-full max-w-xl bg-white rounded-[16px] shadow-[0_8px_30px_rgb(0,0,0,0.06)] border border-gray-100 overflow-hidden">
-                <!-- Header -->
-                <div class="bg-slate-50 border-b border-gray-100 px-6 py-4 text-center relative overflow-hidden">
+            {get_progress_tracker("Capability Mapping", resume_id)}
+        <!-- AI-2 Capability Mapping Card -->
+            <div id="ai2-mapping-card" class="w-full max-w-xl bg-white rounded-[16px] shadow-[0_8px_30px_rgb(0,0,0,0.06)] border border-gray-100 flex flex-col overflow-hidden max-h-[90vh]">
+                <div class="bg-slate-50 border-b border-gray-100 px-6 py-4 text-center relative shrink-0">
                     <div class="w-10 h-10 bg-white rounded-full flex items-center justify-center mx-auto mb-2 shadow-sm border border-gray-100 relative z-10">
-                        <svg class="w-5 h-5 text-vivo-brand" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z"></path>
-                        </svg>
+                        <svg class="w-5 h-5 text-vivo-brand" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 20l-5.447-2.724A1 1 0 013 16.382V5.618a1 1 0 011.447-.894L9 7m0 13l6-3m-6 3V7m6 10l4.553 2.276A1 1 0 0021 18.382V7.618a1 1 0 00-.553-.894L15 4m0 13V4m0 0L9 7"></path></svg>
                     </div>
-                    <h2 class="text-[20px] font-bold text-vivo-navy tracking-tight relative z-10">Assessment Readiness Gate</h2>
-                    <p class="text-[13px] text-gray-500 mt-1 relative z-10">Your resume analysis is complete. A unique test has been configured.</p>
+                    <h2 class="text-[20px] font-bold text-vivo-navy tracking-tight relative z-10">Capability Mapping Complete</h2>
+                    <p class="text-[13px] text-gray-500 mt-1 relative z-10">AI-2 has analyzed your resume against the VivoIQ framework.</p>
                 </div>
-                
-                                <!-- Body -->
-                <div class="p-4">
-                    <div class="space-y-2">
-                        <!-- Item 1 -->
-                        <label class="flex items-start gap-2 p-2 border border-gray-100 rounded-lg cursor-pointer hover:bg-gray-50 transition-colors group">
-                            <div class="pt-1">
-                                <input type="checkbox" class="checkbox checkbox-primary chk-req" onchange="checkReadiness()">
-                            </div>
-                            <div class="w-10 h-10 rounded-full bg-blue-50 flex items-center justify-center flex-shrink-0 mt-0.5 text-vivo-brand">
-                                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z" clip-rule="evenodd"></path><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2"></path></svg>
-                            </div>
-                            <div>
-                                <h4 class="text-[14px] font-bold text-vivo-navy">Quiet Environment</h4>
-                                <p class="text-[13px] text-gray-600 mt-0.5 leading-snug">Ensure you are in a distraction-free space to focus entirely on complex scenario reasoning.</p>
-                            </div>
-                        </label>
-                        
-                        <!-- Item 2 -->
-                        <label class="flex items-start gap-2 p-2 border border-gray-100 rounded-lg cursor-pointer hover:bg-gray-50 transition-colors group">
-                            <div class="pt-1">
-                                <input type="checkbox" class="checkbox checkbox-primary chk-req" onchange="checkReadiness()">
-                            </div>
-                            <div class="w-10 h-10 rounded-full bg-emerald-50 flex items-center justify-center flex-shrink-0 mt-0.5 text-emerald-600">
-                                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8.111 16.404a5.5 5.5 0 017.778 0M12 20h.01m-7.08-7.071c3.904-3.905 10.236-3.905 14.141 0M1.394 9.393c5.857-5.857 15.355-5.857 21.213 0"></path></svg>
-                            </div>
-                            <div>
-                                <h4 class="text-[14px] font-bold text-vivo-navy">Stable Connection</h4>
-                                <p class="text-[13px] text-gray-600 mt-0.5 leading-snug">Do not refresh or navigate away during the test. A dropped connection may result in a locked attempt.</p>
-                            </div>
-                        </label>
-                        
-                        <!-- Item 3 -->
-                        <label class="flex items-start gap-2 p-2 border border-gray-100 rounded-lg cursor-pointer hover:bg-gray-50 transition-colors group">
-                            <div class="pt-1">
-                                <input type="checkbox" class="checkbox checkbox-primary chk-req" onchange="checkReadiness()">
-                            </div>
-                            <div class="w-10 h-10 rounded-full bg-purple-50 flex items-center justify-center flex-shrink-0 mt-0.5 text-purple-600">
-                                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
-                            </div>
-                            <div>
-                                <h4 class="text-[14px] font-bold text-vivo-navy">30 Minutes Blocked</h4>
-                                <p class="text-[13px] text-gray-600 mt-0.5 leading-snug">Once you generate the assessment, a strict 30-minute timer begins. It cannot be paused.</p>
-                            </div>
-                        </label>
-                    </div>
-                    
-                    <div class="mt-4 pt-4 border-t border-gray-100 flex flex-col items-center">
-                        <div id="test-gen-container" class="w-full">
-                            <button id="btn-generate" disabled hx-get="/assessment/generate-test?resume_id={resume_id}" hx-target="#test-gen-loading" hx-swap="outerHTML" onclick="document.getElementById('test-gen-container').classList.add('hidden'); document.getElementById('test-gen-loading').classList.remove('hidden');" class="w-full h-11 bg-vivo-brand hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed text-white text-[14px] font-bold rounded-[8px] shadow-md hover:shadow-lg transition-all flex items-center justify-center gap-2">
-                                <span>I'm Ready — Generate My Assessment</span>
-                            </button>
-                        </div>
-                        
-                        <!-- Dynamic Loading State -->
-                        <div id="test-gen-loading" class="w-full hidden flex flex-col items-center">
-                            <div class="flex justify-between items-center w-full mb-2">
-                                <span id="gen-status-text" class="text-[12px] font-medium text-vivo-brand transition-opacity duration-300">Summoning Assessment Generation Agent (AI-4)...</span>
-                                <span id="gen-progress-pct" class="text-[12px] font-bold text-vivo-brand">0%</span>
-                            </div>
-                            <div class="w-full h-2 bg-blue-50 rounded-full overflow-hidden">
-                                <div id="gen-progress-bar" class="h-full bg-vivo-brand rounded-full transition-all duration-500 ease-out" style="width: 0%"></div>
-                            </div>
-                            
-                            <script>
-                                function checkReadiness() {{
-                                    const boxes = document.querySelectorAll('.chk-req');
-                                    const allChecked = Array.from(boxes).every(b => b.checked);
-                                    const btn = document.getElementById('btn-generate');
-                                    btn.disabled = !allChecked;
-                                }}
-                                
-                                (function() {{
-                                    document.body.addEventListener('htmx:beforeRequest', function(evt) {{
-                                        if (evt.detail.elt.getAttribute('hx-get') && evt.detail.elt.getAttribute('hx-get').includes('generate-test')) {{
-                                            const statuses = [
-                                                "Summoning Assessment Generation Agent (AI-4)...",
-                                                "Synthesizing unique question pool...",
-                                                "Calibrating technical difficulty...",
-                                                "Summoning Integrity Agent (AI-5)...",
-                                                "Auditing for leakage & ambiguity...",
-                                                "Finalizing secure test packet..."
-                                            ];
-                                            let statusIdx = 0;
-                                            const textEl = document.getElementById("gen-status-text");
-                                            const barEl = document.getElementById("gen-progress-bar");
-                                            const pctEl = document.getElementById("gen-progress-pct");
-                                            
-                                            // Cycle text every 4 seconds
-                                            const textInterval = setInterval(() => {{
-                                                if (statusIdx < statuses.length - 1) statusIdx++;
-                                                if(textEl) {{
-                                                    textEl.style.opacity = '0';
-                                                    setTimeout(() => {{
-                                                        textEl.textContent = statuses[statusIdx];
-                                                        textEl.style.opacity = '1';
-                                                    }}, 300);
-                                                }}
-                                            }}, 4000);
-                                            
-                                            // Simulate progress up to 99% over 50 seconds
-                                            let progress = 0;
-                                            const totalDuration = 50000;
-                                            const intervalTime = 500;
-                                            const progressIncrement = (99 / (totalDuration / intervalTime));
-                                            
-                                            const progInterval = setInterval(() => {{
-                                                progress += progressIncrement;
-                                                if(progress > 99) progress = 99;
-                                                if(barEl) barEl.style.width = progress + '%';
-                                                if(pctEl) pctEl.textContent = Math.floor(progress) + '%';
-                                            }}, intervalTime);
-                                            
-                                            // Cleanup
-                                            document.body.addEventListener("htmx:beforeSwap", function cleanup() {{
-                                                clearInterval(textInterval);
-                                                clearInterval(progInterval);
-                                                document.body.removeEventListener("htmx:beforeSwap", cleanup);
-                                            }});
-                                        }}
-                                    }});
-                                }})();
-                            </script>
-                        </div>
-                        
-                        <p class="text-[11px] text-gray-400 mt-4 text-center">By selecting “I’m Ready — Generate My Assessment,” you confirm you’re in a quiet environment and ready to begin.</p>
-                    </div>
+                <div class="vivo-scrollbar p-6 text-[14.5px] text-gray-700 space-y-4 leading-relaxed overflow-y-auto">
+                    {profile_json.get("ai2_narrative_html", "<p>Your resume has been successfully mapped to the VivoIQ framework. Please proceed to the assessment to verify your knowledge depth.</p>")}
+                </div>
+                <div class="p-4 border-t border-gray-100 bg-gray-50 shrink-0">
+                    <button hx-get="/assessment/readiness?resume_id={resume_id}" hx-target="#main-content" hx-swap="innerHTML" class="w-full h-11 bg-vivo-brand hover:bg-blue-700 text-white text-[14px] font-bold rounded-[8px] shadow-md transition-all">Proceed to Assessment Readiness</button>
                 </div>
             </div>
-            
+
         </div>
         """
         return HTMLResponse(content=html_content)
+    except Exception as e:
+        import traceback
+        return HTMLResponse(f"<div class='alert alert-error'><pre>{traceback.format_exc()}</pre></div>", status_code=500)
+
+
+@app.post("/assessment/schedule-evaluation", response_class=HTMLResponse)
+async def schedule_evaluation(
+    request: Request,
+    resume_id: int = Form(...),
+    scheduled_date: str = Form(...),
+    scheduled_time: str = Form(...),
+    session: AsyncSession = Depends(get_session)
+):
+    try:
+        user_id_cookie = request.cookies.get("user_id")
+        if not user_id_cookie:
+            return HTMLResponse("Unauthorized", status_code=401)
+        user_id = int(user_id_cookie)
+        
+        # Save to assessment_schedule using stored procedure or raw SQL
+        await session.execute(
+            text("INSERT INTO assessment_schedule (user_id, resume_id, is_scheduled, scheduled_date, scheduled_time) VALUES (:u_id, :r_id, 1, :s_date, :s_time)"),
+            {"u_id": user_id, "r_id": resume_id, "s_date": scheduled_date, "s_time": scheduled_time}
+        )
+        await session.commit()
+        
+        html = f'''
+        <div class="w-full h-full flex flex-col items-center justify-center animate-fade-in-up">
+            {{get_progress_tracker("Assessment", resume_id)}}
+            <div class="w-full max-w-xl flex flex-col items-center justify-center text-center p-8 bg-white rounded-[16px] shadow-[0_8px_30px_rgb(0,0,0,0.06)] border border-emerald-100 animate-fade-in-up">
+                <div class="w-16 h-16 bg-emerald-50 text-emerald-500 rounded-full flex items-center justify-center mb-4">
+                    <svg class="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg>
+                </div>
+                <h2 class="text-xl font-bold text-vivo-navy mb-2">Evaluation Scheduled!</h2>
+                <p class="text-[14px] text-gray-500 mb-6">We will email you a reminder to complete your assessment on <strong>{{scheduled_date}}</strong> at <strong>{{scheduled_time}}</strong>.</p>
+                <a href="/users/account" class="px-6 py-2.5 bg-vivo-brand text-white font-bold text-[14px] rounded-lg shadow-md hover:bg-blue-700 transition-colors">Return to Account</a>
+            </div>
+        </div>
+        '''
+        return HTMLResponse(content=html)
     except Exception as e:
         import traceback
         return HTMLResponse(f"<div class='alert alert-error'><pre>{traceback.format_exc()}</pre></div>", status_code=500)
@@ -1055,20 +868,26 @@ async def test_questions(request: Request, resume_id: int, q_idx: int = 0, sessi
     elif q_type == "multi_select":
         saved_list = [s.strip() for s in str(saved_answer).split("||")] if saved_answer else []
         for opt in q.get("options", []):
+            import html
+            safe_opt_val = html.escape(str(opt), quote=True)
+            safe_opt_text = html.escape(str(opt))
             checked = "checked" if str(opt).strip() in saved_list else ""
             options_html += f"""
             <label class="flex items-center gap-3 p-3 border border-gray-200 rounded-[8px] cursor-pointer hover:bg-gray-50 transition-colors {'bg-blue-50/30 border-blue-200' if checked else ''}">
-                <input type="checkbox" name="answer" value="{opt}" class="checkbox checkbox-primary checkbox-sm" {checked} />
-                <span class="text-[13px] text-gray-700 font-medium">{opt}</span>
+                <input type="checkbox" name="answer" value="{safe_opt_val}" class="checkbox checkbox-primary checkbox-sm" {checked} />
+                <span class="text-[13px] text-gray-700 font-medium">{safe_opt_text}</span>
             </label>
             """
     else:
         for opt in q.get("options", []):
+            import html
+            safe_opt_val = html.escape(str(opt), quote=True)
+            safe_opt_text = html.escape(str(opt))
             checked = "checked" if str(opt) == str(saved_answer) else ""
             options_html += f"""
             <label class="flex items-center gap-3 p-3 border border-gray-200 rounded-[8px] cursor-pointer hover:bg-gray-50 transition-colors {'bg-blue-50/30 border-blue-200' if checked else ''}">
-                <input type="radio" name="answer" value="{opt}" class="radio radio-primary radio-sm" required {checked} />
-                <span class="text-[13px] text-gray-700 font-medium">{opt}</span>
+                <input type="radio" name="answer" value="{safe_opt_val}" class="radio radio-primary radio-sm" required {checked} />
+                <span class="text-[13px] text-gray-700 font-medium">{safe_opt_text}</span>
             </label>
             """
         
@@ -1620,25 +1439,8 @@ async def view_results(request: Request, resume_id: int, session: AsyncSession =
     
     <div class="w-full max-w-5xl mx-auto py-10 animate-fade-in-up">
         
-        <div class="flex items-center justify-center mb-8 h-12 w-full px-12 max-w-lg mx-auto">
-            <div class="flex flex-col items-center relative z-10 w-8">
-                <div class="w-6 h-6 rounded-full bg-blue-500 text-white flex items-center justify-center text-[10px] shadow-sm"><svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M5 13l4 4L19 7"></path></svg></div>
-                <span class="text-[11px] font-medium text-gray-500 mt-2 absolute top-6 whitespace-nowrap">Account</span>
-            </div>
-            <div class="flex-grow h-[2px] bg-blue-500 mx-2"></div>
-            <div class="flex flex-col items-center relative z-10 w-8">
-                <div class="w-6 h-6 rounded-full bg-blue-500 text-white flex items-center justify-center text-[10px] shadow-sm"><svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M5 13l4 4L19 7"></path></svg></div>
-                <span class="text-[11px] font-medium text-gray-500 mt-2 absolute top-6 whitespace-nowrap">Resume</span>
-            </div>
-            <div class="flex-grow h-[2px] bg-blue-500 mx-2"></div>
-            <div class="flex flex-col items-center relative z-10 w-8">
-                <div class="w-6 h-6 rounded-full bg-blue-500 text-white flex items-center justify-center text-[10px] shadow-sm"><svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M5 13l4 4L19 7"></path></svg></div>
-                <span class="text-[11px] font-medium text-gray-500 mt-2 absolute top-6 whitespace-nowrap">Assessment</span>
-            </div>
-            <div class="flex-grow h-[2px] bg-blue-500 mx-2"></div>
-            <div class="flex flex-col items-center relative z-10 w-8">
-                <div class="w-6 h-6 rounded-full bg-blue-500 text-white flex items-center justify-center shadow-sm"><div class="w-2 h-2 rounded-full bg-white"></div></div>
-                <span class="text-[11px] font-semibold text-vivo-navy mt-2 absolute top-6 whitespace-nowrap">Results</span>
+        {get_progress_tracker("Results", resume_id)}
+                <span class="text-[12px] font-extrabold text-vivo-navy mt-2 absolute top-8 whitespace-nowrap">Results</span>
             </div>
         </div>
         
@@ -1708,6 +1510,23 @@ async def view_results(request: Request, resume_id: int, session: AsyncSession =
     
     <!-- Slide-Over Drawer Component -->
     <style>
+      .vivo-scrollbar::-webkit-scrollbar {{
+          width: 5px;
+      }}
+      .vivo-scrollbar::-webkit-scrollbar-track {{
+          background: transparent;
+      }}
+      .vivo-scrollbar::-webkit-scrollbar-thumb {{
+          background: #d9e2f0;
+          border-radius: 9999px;
+      }}
+      .vivo-scrollbar::-webkit-scrollbar-thumb:hover {{
+          background: #c5d3e5;
+      }}
+      .vivo-scrollbar {{
+          scrollbar-width: thin;
+          scrollbar-color: #d9e2f0 transparent;
+      }}
       #learning-drawer:not(:checked) ~ #drawer-backdrop,
       #learning-drawer:not(:checked) ~ #drawer-panel {{
           display: none !important;
@@ -3154,3 +2973,282 @@ if __name__ == "__main__":
     import uvicorn
     uvicorn.run("main:app", host="0.0.0.0", port=8002, reload=True)
 
+
+
+@app.get("/assessment/readiness", response_class=HTMLResponse)
+async def readiness_gate(resume_id: int, request: Request, session: AsyncSession = Depends(get_session)):
+    user_id_cookie = request.cookies.get("user_id")
+    if not user_id_cookie:
+        return HTMLResponse("Unauthorized", status_code=401)
+    user_id = int(user_id_cookie)
+    
+    # Fetch schedule if it exists
+    sch_result = await session.execute(
+        text("CALL GetLatestAssessmentSchedule(:u_id)"),
+        {"u_id": user_id}
+    )
+    sch_row = sch_result.mappings().first()
+    
+    is_schedule_active = False
+    if sch_row and sch_row.get("scheduled_date") and sch_row.get("scheduled_time"):
+        import datetime
+        d_str = sch_row["scheduled_date"]
+        t_str = sch_row["scheduled_time"]
+        dt = None
+        try:
+            dt = datetime.datetime.strptime(f"{d_str} {t_str}", "%Y-%m-%d %H:%M")
+        except Exception:
+            try:
+                dt = datetime.datetime.strptime(f"{d_str} {t_str}", "%B %d, %Y %I:%M %p")
+            except Exception:
+                pass
+        if dt and dt > datetime.datetime.now():
+            is_schedule_active = True
+
+    if is_schedule_active:
+        hide_gen_controls = "hidden"
+        readiness_dynamic_body = f'''
+        <div class="p-8 text-center bg-white flex flex-col items-center animate-fade-in">
+            <div class="w-16 h-16 bg-emerald-50 text-emerald-500 rounded-full flex items-center justify-center mb-5 border border-emerald-100 shadow-sm">
+                <svg class="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+            </div>
+            <h3 class="text-[20px] font-extrabold text-vivo-navy tracking-tight mb-2">Evaluation Scheduled</h3>
+            <p class="text-[14px] text-gray-500 mb-8 leading-relaxed max-w-sm mx-auto">Your assessment has been scheduled. We will email you a secure link to take the test on <strong>{sch_row['scheduled_date']}</strong> at <strong>{sch_row['scheduled_time']}</strong>.</p>
+            <a href="/users/account" class="px-6 py-2.5 bg-vivo-brand text-white font-bold text-[14px] rounded-lg shadow-md hover:bg-blue-700 transition-colors inline-flex items-center gap-2">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 19l-7-7m0 0l7-7m-7 7h18"></path></svg>
+                Return to Account
+            </a>
+        </div>
+        '''
+    else:
+        hide_gen_controls = ""
+        readiness_dynamic_body = '''
+              <div class="p-4">
+                  <div class="space-y-2">
+                      <!-- Item 1 -->
+                      <div class="flex items-center gap-3 p-2 border border-gray-100 rounded-lg hover:bg-gray-50 transition-colors">
+                          <div class="w-10 h-10 rounded-full bg-blue-50 flex items-center justify-center flex-shrink-0 text-vivo-brand">
+                              <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z" clip-rule="evenodd"></path><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2"></path></svg>
+                          </div>
+                          <div class="flex-grow">
+                              <h4 class="text-[14px] font-bold text-vivo-navy">Quiet Environment</h4>
+                              <p class="text-[12px] text-gray-500 mt-0.5 leading-tight">Ensure you are in a distraction-free space.</p>
+                          </div>
+                          <div class="flex items-center gap-1.5 ml-2">
+                              <button type="button" class="ready-tick w-8 h-8 rounded-full border border-gray-200 bg-white text-gray-300 hover:text-emerald-500 hover:border-emerald-300 transition-colors flex items-center justify-center" onclick="setReady('quiet', true, this)">
+                                  <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg>
+                              </button>
+                              <button type="button" class="ready-cross w-8 h-8 rounded-full border border-gray-200 bg-white text-gray-300 hover:text-rose-500 hover:border-rose-300 transition-colors flex items-center justify-center" onclick="setReady('quiet', false, this)">
+                                  <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
+                              </button>
+                          </div>
+                      </div>
+                      
+                      <!-- Item 2 -->
+                      <div class="flex items-center gap-3 p-2 border border-gray-100 rounded-lg hover:bg-gray-50 transition-colors">
+                          <div class="w-10 h-10 rounded-full bg-emerald-50 flex items-center justify-center flex-shrink-0 text-emerald-600">
+                              <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8.111 16.404a5.5 5.5 0 017.778 0M12 20h.01m-7.08-7.071c3.904-3.905 10.236-3.905 14.141 0M1.394 9.393c5.857-5.857 15.355-5.857 21.213 0"></path></svg>
+                          </div>
+                          <div class="flex-grow">
+                              <h4 class="text-[14px] font-bold text-vivo-navy">Stable Connection</h4>
+                              <p class="text-[12px] text-gray-500 mt-0.5 leading-tight">Do not refresh or navigate away.</p>
+                          </div>
+                          <div class="flex items-center gap-1.5 ml-2">
+                              <button type="button" class="ready-tick w-8 h-8 rounded-full border border-gray-200 bg-white text-gray-300 hover:text-emerald-500 hover:border-emerald-300 transition-colors flex items-center justify-center" onclick="setReady('conn', true, this)">
+                                  <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg>
+                              </button>
+                              <button type="button" class="ready-cross w-8 h-8 rounded-full border border-gray-200 bg-white text-gray-300 hover:text-rose-500 hover:border-rose-300 transition-colors flex items-center justify-center" onclick="setReady('conn', false, this)">
+                                  <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
+                              </button>
+                          </div>
+                      </div>
+                      
+                      <!-- Item 3 -->
+                      <div class="flex items-center gap-3 p-2 border border-gray-100 rounded-lg hover:bg-gray-50 transition-colors">
+                          <div class="w-10 h-10 rounded-full bg-purple-50 flex items-center justify-center flex-shrink-0 text-purple-600">
+                              <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+                          </div>
+                          <div class="flex-grow">
+                              <h4 class="text-[14px] font-bold text-vivo-navy">30 Minutes Blocked</h4>
+                              <p class="text-[12px] text-gray-500 mt-0.5 leading-tight">A strict 30-minute timer begins.</p>
+                          </div>
+                          <div class="flex items-center gap-1.5 ml-2">
+                              <button type="button" class="ready-tick w-8 h-8 rounded-full border border-gray-200 bg-white text-gray-300 hover:text-emerald-500 hover:border-emerald-300 transition-colors flex items-center justify-center" onclick="setReady('time', true, this)">
+                                  <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg>
+                              </button>
+                              <button type="button" class="ready-cross w-8 h-8 rounded-full border border-gray-200 bg-white text-gray-300 hover:text-rose-500 hover:border-rose-300 transition-colors flex items-center justify-center" onclick="setReady('time', false, this)">
+                                  <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
+                              </button>
+                          </div>
+                      </div>
+                  </div>
+              </div>
+        '''
+        
+    html_content = f'''
+    <div class="absolute top-6 right-8 z-50 animate-fade-in">
+        <a href="/users/logout" class="text-[13px] font-semibold text-gray-400 hover:text-vivo-brand transition-colors flex items-center gap-1.5 cursor-pointer">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1"></path></svg> 
+            Log out
+        </a>
+    </div>
+    <div class="w-full h-full flex flex-col items-center justify-center animate-fade-in-up">
+        {get_progress_tracker("Assessment", resume_id)}
+        <!-- Readiness Gate Card -->
+        <div id="readiness-gate-card" class="w-full max-w-xl bg-white rounded-[16px] shadow-[0_8px_30px_rgb(0,0,0,0.06)] border border-gray-100 overflow-hidden">
+            <!-- Header -->
+            <div class="bg-slate-50 border-b border-gray-100 px-6 py-4 text-center relative overflow-hidden">
+                <div class="w-10 h-10 bg-white rounded-full flex items-center justify-center mx-auto mb-2 shadow-sm border border-gray-100 relative z-10">
+                    <svg class="w-5 h-5 text-vivo-brand" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z"></path></svg>
+                </div>
+                <h2 class="text-[20px] font-bold text-vivo-navy tracking-tight relative z-10">Assessment Readiness Gate</h2>
+                <p class="text-[13px] text-gray-500 mt-1 relative z-10">Your unique test has been configured based on your capability mapping.</p>
+            </div>
+            
+            <!-- Body -->
+            {readiness_dynamic_body}
+            <div class="mt-4 pt-4 border-t border-gray-100 flex flex-col items-center {hide_gen_controls}">
+                  <div id="test-gen-container" class="w-full flex flex-col gap-2">
+                      <button id="btn-generate" disabled hx-get="/assessment/generate-test?resume_id={resume_id}" hx-target="#test-gen-loading" hx-swap="outerHTML" onclick="document.getElementById('test-gen-container').classList.add('hidden'); document.getElementById('test-gen-loading').classList.remove('hidden');" class="w-full h-11 bg-vivo-brand hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed text-white text-[14px] font-bold rounded-[8px] shadow-md hover:shadow-lg transition-all flex items-center justify-center gap-2">
+                          <span>I'm Ready - Generate My Assessment</span>
+                      </button>
+                      <button type="button" id="btn-evaluate-later" onclick="document.getElementById('schedule-modal').classList.remove('hidden')" class="w-full h-11 bg-white border-2 border-gray-200 hover:border-vivo-brand/40 hover:bg-blue-50/50 text-gray-600 hover:text-vivo-brand text-[14px] font-bold rounded-[8px] shadow-sm hover:shadow transition-all flex items-center justify-center gap-2 hidden group">
+                          <svg class="w-4 h-4 opacity-60 group-hover:opacity-100 transition-opacity" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"></path></svg>
+                          <span>Evaluate Later</span>
+                      </button>
+                  </div>
+                  
+                  <div id="test-gen-loading" class="hidden w-full flex flex-col items-center py-2">
+                      <div class="w-6 h-6 border-2 border-blue-200 border-t-vivo-brand rounded-full animate-spin mb-3"></div>
+                      <p class="text-[12px] font-medium text-gray-500 animate-pulse text-center">Generating adaptive questions...</p>
+                  </div>
+            </div>
+            
+            <script>
+                // Track state
+                const readyState = {{
+                    quiet: null,
+                    conn: null,
+                    time: null
+                }};
+                
+                function setReady(type, isReady, btn) {{
+                    readyState[type] = isReady;
+                    
+                    const parent = btn.parentElement;
+                    const tickBtn = parent.querySelector('.ready-tick');
+                    const crossBtn = parent.querySelector('.ready-cross');
+                    
+                    if (isReady) {{
+                        tickBtn.classList.replace('text-gray-300', 'text-emerald-500');
+                        tickBtn.classList.replace('border-gray-200', 'border-emerald-300');
+                        tickBtn.classList.add('bg-emerald-50');
+                        
+                        crossBtn.classList.replace('text-rose-500', 'text-gray-300');
+                        crossBtn.classList.replace('border-rose-300', 'border-gray-200');
+                        crossBtn.classList.remove('bg-rose-50');
+                    }} else {{
+                        crossBtn.classList.replace('text-gray-300', 'text-rose-500');
+                        crossBtn.classList.replace('border-gray-200', 'border-rose-300');
+                        crossBtn.classList.add('bg-rose-50');
+                        
+                        tickBtn.classList.replace('text-emerald-500', 'text-gray-300');
+                        tickBtn.classList.replace('border-emerald-300', 'border-gray-200');
+                        tickBtn.classList.remove('bg-emerald-50');
+                    }}
+                    
+                    const btnGen = document.getElementById('btn-generate');
+                    const btnLater = document.getElementById('btn-evaluate-later');
+                    
+                    const allTrue = (readyState.quiet === true && readyState.conn === true && readyState.time === true);
+                    const anyFalse = (readyState.quiet === false || readyState.conn === false || readyState.time === false);
+                    
+                    if (allTrue) {{
+                        btnGen.disabled = false;
+                        btnGen.classList.remove('hidden');
+                        btnLater.classList.add('hidden');
+                    }} else {{
+                        btnGen.disabled = true;
+                        if (anyFalse) {{
+                            btnGen.classList.add('hidden');
+                            btnLater.classList.remove('hidden');
+                        }} else {{
+                            btnGen.classList.remove('hidden');
+                            btnLater.classList.add('hidden');
+                        }}
+                    }}
+                }}
+            </script>
+        </div>
+        
+        <!-- Schedule Modal -->
+        <div id="schedule-modal" class="fixed inset-0 bg-slate-900/40 z-[100] flex items-center justify-center hidden animate-fade-in p-4 text-left">
+            <div class="bg-white w-full max-w-sm rounded-[24px] shadow-2xl overflow-hidden animate-scale-up border border-gray-100">
+                
+                <!-- Header with Icon -->
+                <div class="px-6 pt-7 pb-3 text-center relative">
+                    <button type="button" onclick="document.getElementById('schedule-modal').classList.add('hidden')" class="absolute top-4 right-4 text-gray-400 hover:text-gray-700 bg-gray-50 hover:bg-gray-100 rounded-full p-2 transition-colors">
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
+                    </button>
+                    <div class="w-14 h-14 bg-blue-50/50 text-vivo-brand rounded-full flex items-center justify-center mx-auto mb-3 border border-blue-100/50">
+                        <svg class="w-7 h-7" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"></path></svg>
+                    </div>
+                    <h3 class="text-[19px] font-extrabold text-gray-900 tracking-tight">Schedule Assessment</h3>
+                    <p class="text-[13px] text-gray-500 mt-1.5 leading-snug px-4">Pick a time that works best for you. We'll send a reminder.</p>
+                </div>
+
+                <!-- Form -->
+                <form hx-post="/assessment/schedule-evaluation" hx-target="#main-content" hx-swap="innerHTML" class="px-6 pb-7 space-y-5">
+                    <input type="hidden" name="resume_id" value="{resume_id}">
+                    
+                    <div class="space-y-4">
+                        <!-- Date Input -->
+                        <div>
+                            <label class="block text-[11px] font-bold text-gray-400 uppercase tracking-wider mb-1.5 ml-1">Date</label>
+                            <div class="relative">
+                                <input type="text" id="fp-new-date" name="scheduled_date" placeholder="Select date..." required class="w-full h-12 pl-11 pr-4 bg-white text-black border border-gray-200 rounded-xl text-[14px] font-medium focus:ring-4 focus:ring-blue-50 focus:border-vivo-brand outline-none transition-all shadow-sm cursor-pointer">
+                                <svg class="w-5 h-5 text-gray-400 absolute left-4 top-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"></path></svg>
+                            </div>
+                        </div>
+                        
+                        <!-- Time Input -->
+                        <div>
+                            <label class="block text-[11px] font-bold text-gray-400 uppercase tracking-wider mb-1.5 ml-1">Time</label>
+                            <div class="relative">
+                                <input type="text" id="fp-new-time" name="scheduled_time" placeholder="Select time..." required class="w-full h-12 pl-11 pr-4 bg-white text-black border border-gray-200 rounded-xl text-[14px] font-medium focus:ring-4 focus:ring-blue-50 focus:border-vivo-brand outline-none transition-all shadow-sm cursor-pointer">
+                                <svg class="w-5 h-5 text-gray-400 absolute left-4 top-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Actions -->
+                    <div class="pt-2 flex items-center gap-3">
+                        <button type="button" onclick="document.getElementById('schedule-modal').classList.add('hidden')" class="flex-1 h-12 bg-white border border-gray-200 hover:bg-gray-50 hover:border-gray-300 text-gray-700 font-bold text-[14px] rounded-xl transition-all shadow-sm">Cancel</button>
+                        <button type="submit" onclick="document.getElementById('schedule-modal').classList.add('hidden')" class="flex-1 h-12 bg-vivo-brand hover:bg-blue-700 text-white font-bold text-[14px] rounded-xl shadow-md hover:shadow-lg transition-all flex items-center justify-center gap-1.5">
+                            Confirm
+                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg>
+                        </button>
+                    </div>
+                </form>
+                <script>
+                    (function() {{
+                        if (typeof flatpickr !== 'undefined') {{
+                            flatpickr('#fp-new-date', {{
+                                dateFormat: 'F j, Y',
+                                minDate: 'today',
+                                defaultDate: 'today'
+                            }});
+                            flatpickr('#fp-new-time', {{
+                                enableTime: true,
+                                noCalendar: true,
+                                dateFormat: "h:i K",
+                                defaultDate: "12:00 PM"
+                            }});
+                        }}
+                    }})();
+                </script>
+            </div>
+        </div>
+    </div>
+    '''
+    return HTMLResponse(content=html_content)

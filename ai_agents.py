@@ -37,7 +37,7 @@ def run_resume_intelligence_agent(resume_text: str) -> dict:
     AI-1: Resume Intelligence Agent
     Parses resume text into a structured capability profile.
     """
-    model = genai.GenerativeModel("gemini-3.6-flash")
+    model = genai.GenerativeModel("gemini-3.5-flash")
     
     prompt = f"""
     SYSTEM ROLE:
@@ -95,13 +95,62 @@ def run_resume_intelligence_agent(resume_text: str) -> dict:
         print(f"Error parsing AI-1 JSON: {e}")
         return {}
 
+def run_capability_mapping_agent(profile_json: dict) -> dict:
+    """
+    AI-2: Capability Mapping Agent
+    Generates a personalized narrative mapping for the user based on AI-1 profile,
+    highlighting their strengths and nudging them to the assessment.
+    """
+    model = genai.GenerativeModel("gemini-3.5-flash")
+    prompt = f"""
+    SYSTEM ROLE:
+    You are the VivoIQ Capability Mapping Agent (AI-2).
+    A candidate has just uploaded their resume. Our Resume Intelligence Agent (AI-1) has parsed it and generated this capability profile:
+    {json.dumps(profile_json)}
+    
+    RULES:
+    1. Extract their Estimated Level (number) and their primary Job Role.
+    2. Extract the Domain Weights from the profile (e.g. domain name and weight percentage).
+    3. Extract 2-3 High Confidence Competencies with their confidence scores and a very brief evidence summary (1 sentence max).
+    4. Identify 2 Areas Requiring Verification (where the resume lacks detail or depth) and explain why briefly.
+    5. Write a short, encouraging call-to-action (CTA) urging them to take the assessment to verify their depth.
+    6. Return ONLY a valid JSON object matching the schema below.
+    
+    OUTPUT FORMAT:
+    {{
+        "level": 3,
+        "role": "Category Manager",
+        "domain_weights": [
+            {{"domain": "Strategic Sourcing", "weight": "40%"}}
+        ],
+        "high_confidence": [
+            {{"name": "Market Analysis", "confidence": "85%", "evidence": "Brief evidence summary"}}
+        ],
+        "areas_to_verify": [
+            {{"name": "Contract Negotiation", "reason": "Brief reason why verification is needed"}}
+        ],
+        "cta": "Your resume demonstrates solid foundational evidence. Please proceed to the assessment to verify your theoretical depth and strategic judgment under timed conditions."
+    }}
+    """
+    try:
+        response = model.generate_content(prompt)
+        json_str = response.text.strip()
+        if json_str.startswith("```json"):
+            json_str = json_str[7:]
+        if json_str.endswith("```"):
+            json_str = json_str[:-3]
+        return json.loads(json_str)
+    except Exception as e:
+        print(f"Error parsing AI-2 JSON: {e}")
+        return {}
+
 def run_assessment_blueprint_agent(capability_profile: dict, previous_results: dict = None, progression_type: str = None) -> dict:
     """
     AI-3: Assessment Blueprint Agent
     Builds a 20-slot question blueprint from the candidate's capability profile.
     Supports Next-Level Progression and Retakes by incorporating previous assessment results.
     """
-    model = genai.GenerativeModel("gemini-3.6-flash")
+    model = genai.GenerativeModel("gemini-3.5-flash")
     
     progression_instructions = ""
     if progression_type == "next_level" and previous_results:
@@ -186,7 +235,7 @@ def run_question_generation_agent(blueprint: dict, capability_profile: dict) -> 
     AI-4: Question Generation Agent
     Generates the actual 20 questions based on the blueprint and capability profile.
     """
-    model = genai.GenerativeModel("gemini-3.6-flash")
+    model = genai.GenerativeModel("gemini-3.5-flash")
     
     prompt = f"""
     SYSTEM ROLE:
@@ -249,7 +298,7 @@ def run_assessment_integrity_agent(generated_questions: dict, blueprint: dict) -
     Reviews the generated questions for ambiguity, leakage, duplicates, factual quality and level appropriateness.
     Replaces defective questions while preserving the original blueprint objective.
     """
-    model = genai.GenerativeModel("gemini-3.6-flash")
+    model = genai.GenerativeModel("gemini-3.5-flash")
     
     prompt = f"""
     SYSTEM ROLE:
@@ -328,7 +377,7 @@ def run_response_evaluation_agent(questions: list, user_responses: dict) -> dict
     Evaluates submitted free-text answers against question-specific rubrics.
     Returns per-question score, evidence, reasoning quality, and confidence.
     """
-    model = genai.GenerativeModel("gemini-3.6-flash") # Using flash for high-speed evaluation
+    model = genai.GenerativeModel("gemini-3.5-flash") # Using flash for high-speed evaluation
     
     payload = []
     for q in questions:
