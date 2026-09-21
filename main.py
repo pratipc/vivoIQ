@@ -241,6 +241,153 @@ async def logout():
     response.delete_cookie("user_id")
     return response
 
+
+@app.get("/users/account", response_class=HTMLResponse)
+async def account_page(request: Request, session: AsyncSession = Depends(get_session)):
+    user_id_cookie = request.cookies.get("user_id")
+    if not user_id_cookie:
+        return RedirectResponse(url="/", status_code=302)
+    
+    user_id = int(user_id_cookie)
+    
+    # Fetch User
+    u_res = await session.execute(
+        text("SELECT name, email, created_at FROM user WHERE id = :u_id"),
+        {"u_id": user_id}
+    )
+    user_row = u_res.mappings().first()
+    
+    if not user_row:
+        return RedirectResponse(url="/", status_code=302)
+        
+    # Fetch Candidate Profile
+    p_res = await session.execute(
+        text("SELECT expected_level, profile_json FROM candidate_profiles WHERE user_id = :u_id ORDER BY created_at DESC LIMIT 1"),
+        {"u_id": user_id}
+    )
+    prof_row = p_res.mappings().first()
+    
+    level_str = "Unassessed"
+    role_str = "No resume uploaded"
+    if prof_row:
+        level_str = f"L{prof_row['expected_level']}" if prof_row['expected_level'] else "Unassessed"
+        if prof_row['profile_json']:
+            import json
+            try:
+                pj = json.loads(prof_row['profile_json'])
+                role_str = pj.get("roles", ["Professional"])[0] if pj.get("roles") else "Professional"
+            except:
+                pass
+                
+    # Format date
+    join_date = user_row['created_at'].strftime("%B %d, %Y") if user_row['created_at'] else "Recently"
+    
+    # HTML UI
+    html = f'''
+    <!DOCTYPE html>
+    <html lang="en">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>Account - VivoIQ</title>
+        <script src="https://cdn.tailwindcss.com"></script>
+        <script>
+            tailwind.config = {{
+                theme: {{
+                    extend: {{
+                        colors: {{
+                            'vivo-brand': '#3B82F6',
+                            'vivo-navy': '#0F172A',
+                            'vivo-bg': '#F8FAFC'
+                        }},
+                        animation: {{
+                            'fade-in-up': 'fadeInUp 0.6s ease-out forwards',
+                            'pulse': 'pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite'
+                        }},
+                        keyframes: {{
+                            fadeInUp: {{
+                                '0%': {{ opacity: '0', transform: 'translateY(15px)' }},
+                                '100%': {{ opacity: '1', transform: 'translateY(0)' }}
+                            }}
+                        }}
+                    }}
+                }}
+            }}
+        </script>
+    </head>
+    <body class="bg-vivo-bg min-h-screen text-slate-800 font-sans selection:bg-blue-100 selection:text-blue-900">
+        <div class="w-full max-w-2xl mx-auto py-12 px-6 animate-fade-in-up mt-10">
+            <!-- Header -->
+            <div class="mb-8 flex items-center justify-between">
+                <div>
+                    <h1 class="text-3xl font-extrabold text-vivo-navy tracking-tight">Account Profile</h1>
+                    <p class="text-[14px] text-gray-500 mt-1">Manage your personal information and capability level.</p>
+                </div>
+                <a href="/assessment/onboarding" class="px-5 py-2.5 bg-white border border-gray-200 text-gray-700 text-[13px] font-bold rounded-xl shadow-sm hover:bg-gray-50 transition-colors flex items-center gap-2 group">
+                    <svg class="w-4 h-4 text-gray-400 group-hover:-translate-x-0.5 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 19l-7-7m0 0l7-7m-7 7h18"></path></svg>
+                    Back to Dashboard
+                </a>
+            </div>
+            
+            <!-- Main Card -->
+            <div class="bg-white rounded-[24px] shadow-sm border border-gray-100 overflow-hidden">
+                <!-- Top Color Bar -->
+                <div class="h-28 bg-gradient-to-r from-vivo-brand to-indigo-600 relative overflow-hidden">
+                    <div class="absolute inset-0 bg-white/10" style="background-image: radial-gradient(circle at 20% 150%, rgba(255,255,255,0.15) 0%, transparent 50%);"></div>
+                </div>
+                
+                <div class="px-8 pb-8 relative">
+                    <!-- Avatar -->
+                    <div class="w-24 h-24 bg-white rounded-full p-1.5 absolute -top-12 shadow-sm border border-gray-100">
+                        <div class="w-full h-full bg-blue-50/80 rounded-full flex items-center justify-center text-vivo-brand text-3xl font-extrabold ring-1 ring-blue-100/50">
+                            {user_row['name'][0].upper()}
+                        </div>
+                    </div>
+                    
+                    <!-- Info Section -->
+                    <div class="pt-16 flex justify-between items-start">
+                        <div>
+                            <h2 class="text-2xl font-extrabold text-gray-900 tracking-tight">{user_row['name']}</h2>
+                            <p class="text-[14px] text-gray-500 font-medium mt-0.5">{role_str}</p>
+                        </div>
+                        <div class="px-4 py-2 bg-blue-50/50 border border-blue-100/50 rounded-xl flex flex-col items-center justify-center min-w-[100px]">
+                            <span class="text-[10px] font-bold text-blue-500/80 uppercase tracking-widest block mb-0.5">Current Level</span>
+                            <span class="text-lg font-black text-vivo-brand">{level_str}</span>
+                        </div>
+                    </div>
+                    
+                    <div class="mt-8 grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div class="p-5 bg-slate-50/70 border border-slate-100 rounded-[16px]">
+                            <div class="flex items-center gap-2 mb-1.5">
+                                <svg class="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"></path></svg>
+                                <span class="text-[11px] font-bold text-gray-400 uppercase tracking-wider">Email Address</span>
+                            </div>
+                            <p class="text-[14px] font-bold text-gray-800">{user_row['email']}</p>
+                        </div>
+                        
+                        <div class="p-5 bg-slate-50/70 border border-slate-100 rounded-[16px]">
+                            <div class="flex items-center gap-2 mb-1.5">
+                                <svg class="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"></path></svg>
+                                <span class="text-[11px] font-bold text-gray-400 uppercase tracking-wider">Member Since</span>
+                            </div>
+                            <p class="text-[14px] font-bold text-gray-800">{join_date}</p>
+                        </div>
+                    </div>
+                    
+                    <div class="mt-8 pt-6 border-t border-gray-100 flex justify-end">
+                        <a href="/users/logout" class="px-6 py-2.5 bg-rose-50 hover:bg-rose-100 text-rose-600 font-bold text-[13px] rounded-xl transition-colors flex items-center gap-2">
+                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1"></path></svg>
+                            Sign Out
+                        </a>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </body>
+    </html>
+    '''
+    return HTMLResponse(content=html)
+
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run("main:app", host="0.0.0.0", port=8001, reload=True)
