@@ -670,7 +670,7 @@ async def generate_test(resume_id: int, request: Request, session: AsyncSession 
                 elif i < 15: ui_json["sections"][2]["questions"].append(q_ui)
                 else: ui_json["sections"][3]["questions"].append(q_ui)
                     
-            raw_json = json.dumps(ui_json)
+            ui_json["ai4_json"] = ai4_json; ui_json["ai5_json"] = ai5_json; raw_json = json.dumps(ui_json)
             await session.execute(
                 text("CALL SaveAIAssessment(:u_id, :r_id, :test_json)"),
                 {"u_id": user_id, "r_id": resume_id, "test_json": raw_json}
