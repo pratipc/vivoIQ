@@ -11,8 +11,8 @@ app = FastAPI(title="VivoIQ Gateway")
 templates = Jinja2Templates(directory="templates")
 
 # Microservice URLs
-USER_SERVICE_URL = os.getenv("USER_SERVICE_URL", "http://localhost:8001")
-ASSESSMENT_SERVICE_URL = os.getenv("ASSESSMENT_SERVICE_URL", "http://localhost:8002")
+USER_SERVICE_URL = os.getenv("USER_SERVICE_URL", "http://127.0.0.1:8001")
+ASSESSMENT_SERVICE_URL = os.getenv("ASSESSMENT_SERVICE_URL", "http://127.0.0.1:8002")
 
 async def proxy_request(request: Request, service_url: str, path: str):
     async with httpx.AsyncClient(timeout=300.0) as client:
@@ -72,7 +72,7 @@ async def htmx_middleware(request: Request, call_next):
     
     response = await call_next(request)
     
-    if not hx_request and request.method == "GET" and response.status_code == 200 and not request.url.path.startswith(("/api", "/docs", "/openapi.json", "/favicon.ico", "/assessment/certificate", "/assessment/learning-plan")):
+    if not hx_request and request.method == "GET" and response.status_code == 200 and not request.url.path.startswith(("/api", "/docs", "/openapi.json", "/favicon.ico", "/assessment/certificate", "/assessment/learning-plan", "/admin/download-resume")):
         # Read the inner HTML body
         body_chunks = []
         async for chunk in response.body_iterator:
@@ -92,6 +92,10 @@ async def htmx_middleware(request: Request, call_next):
 @app.api_route("/users/{path:path}", methods=["GET", "POST", "PUT", "DELETE"])
 async def route_user_service(request: Request, path: str):
     return await proxy_request(request, USER_SERVICE_URL, f"users/{path}")
+
+@app.api_route("/admin/{path:path}", methods=["GET", "POST", "PUT", "DELETE"])
+async def route_admin_service(request: Request, path: str):
+    return await proxy_request(request, USER_SERVICE_URL, f"admin/{path}")
 
 @app.api_route("/assessment/{path:path}", methods=["GET", "POST", "PUT", "DELETE"])
 async def route_assessment_service(request: Request, path: str):
