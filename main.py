@@ -1,6 +1,7 @@
 from fastapi import FastAPI, Request, Form, Depends
 from fastapi.responses import HTMLResponse, Response, RedirectResponse
 from fastapi.templating import Jinja2Templates
+from admin import admin_router
 from dotenv import load_dotenv
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import text
@@ -16,6 +17,7 @@ from models import User
 load_dotenv(dotenv_path="../.env")
 
 app = FastAPI(title="VivoIQ User Service")
+app.include_router(admin_router, prefix="/admin")
 templates = Jinja2Templates(directory="templates")
 
 @app.on_event("startup")
@@ -252,7 +254,7 @@ async def account_page(request: Request, session: AsyncSession = Depends(get_ses
     
     # Fetch User
     u_res = await session.execute(
-        text("SELECT name, email, created_at FROM user WHERE id = :u_id"),
+        text("CALL GetUserById(:u_id)"),
         {"u_id": user_id}
     )
     user_row = u_res.mappings().first()
@@ -262,7 +264,7 @@ async def account_page(request: Request, session: AsyncSession = Depends(get_ses
         
     # Fetch Candidate Profile
     p_res = await session.execute(
-        text("SELECT expected_level, profile_json FROM candidate_profiles WHERE user_id = :u_id ORDER BY created_at DESC LIMIT 1"),
+        text("CALL GetLatestCandidateProfile(:u_id)"),
         {"u_id": user_id}
     )
     prof_row = p_res.mappings().first()
